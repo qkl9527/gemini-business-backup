@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Chat Scraper",
+  "version": "1.0.0",
+  "description": "抓取Gemini Business聊天记录 - 第一阶段：基础文本抓取",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://business.gemini.google/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://business.gemini.google/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

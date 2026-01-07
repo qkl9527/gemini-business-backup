@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="16" fill="url(#gradient)"/>
+  <defs>
+    <linearGradient id="gradient" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4285F4"/>
+      <stop offset="1" stop-color="#34A853"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 40h64M32 64h64M32 88h40" stroke="white" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="100" cy="88" r="10" fill="white"/>
+  <circle cx="100" cy="88" r="4" fill="#34A853"/>
+  <text x="64" y="28" text-anchor="middle" fill="white" font-size="14" font-weight="bold" font-family="Arial">Gemini</text>
+</svg>

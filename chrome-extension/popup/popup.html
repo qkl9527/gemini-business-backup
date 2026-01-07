@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Business Chat Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>📊 Gemini Business 聊天记录抓取工具</h1>
+      <p class="subtitle">第一阶段：基础文本抓取</p>
+    </header>
+
+    <section class="status-section">
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">状态</span>
+          <span id="status" class="value status-idle">就绪</span>
+        </div>
+        <div class="status-item">
+          <span class="label">进度</span>
+          <span id="progress-text" class="value">0 / 0</span>
+        </div>
+        <div class="status-item">
+          <span class="label">抓取数</span>
+          <span id="scraped-count" class="value">0</span>
+        </div>
+      </div>
+
+      <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="start-btn" class="btn btn-primary">
+        <span class="btn-icon">▶</span>
+        开始抓取
+      </button>
+      <button id="stop-btn" class="btn btn-danger" disabled>
+        <span class="btn-icon">■</span>
+        停止抓取
+      </button>
+      <button id="export-btn" class="btn btn-success" disabled>
+        <span class="btn-icon">💾</span>
+        导出 JSON
+      </button>
+    </section>
+
+    <section class="logs-section">
+      <div class="logs-header">
+        <h3>📝 运行日志</h3>
+        <button id="clear-logs" class="btn-text">清空</button>
+      </div>
+      <div id="log-container" class="log-container">
+        <div class="log-entry info">
+          <span class="log-time">--:--:--</span>
+          <span class="log-message">扩展已加载，准备就绪</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="help-section">
+      <details>
+        <summary>📖 使用说明</summary>
+        <div class="help-content">
+          <ol>
+            <li>确保已登录 Gemini Business</li>
+            <li>点击"开始抓取"按钮</li>
+            <li>等待抓取完成（请勿切换页面）</li>
+            <li>点击"导出 JSON"保存结果</li>
+            <li>查看浏览器控制台(F12)获取详细日志</li>
+          </ol>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
