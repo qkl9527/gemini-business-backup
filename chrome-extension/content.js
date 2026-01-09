@@ -269,7 +269,7 @@
         logger.warn(`[${index}/${total}] 点击后未加载内容`);
       }
 
-      await sleep(15000);
+      await sleep(8000);
 
       const messages = extractMessages();
 

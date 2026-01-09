@@ -18,8 +18,14 @@
   let currentTabId = null;
   let scrapedData = null;
   let isScraping = false;
+  let currentStatus = 'idle';
+  let progressCurrent = 0;
+  let progressTotal = 0;
+
+  const STORAGE_KEY = 'gemini_scraper_data';
 
   function updateStatus(status, message = null) {
+    currentStatus = status;
     const statusMap = {
       'idle': { text: '就绪', class: 'status-idle' },
       'scraping': { text: '抓取中...', class: 'status-scraping' },
@@ -33,9 +39,12 @@
     statusEl.textContent = config.text;
     statusEl.className = `value ${config.class}`;
 
+    const hasData = scrapedData && scrapedData.length > 0;
+    const canExport = hasData && !isScraping;
+
     startBtn.disabled = ['scraping', 'connecting'].includes(status);
     stopBtn.disabled = !['scraping'].includes(status);
-    exportBtn.disabled = !['completed', 'stopped'].includes(status) || !scrapedData;
+    exportBtn.disabled = !canExport;
   }
 
   function updateProgress(current, total) {
@@ -87,14 +96,26 @@
       addLog('正在连接...', 'info');
 
       // 等待content script加载
-      await sleep(1000);
+      await sleep(500);
 
-      // 尝试ping content script
+      // 尝试ping content script并获取当前状态
       try {
         const response = await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
         if (response.success) {
           addLog('Extension已连接', 'success');
-          updateStatus('idle');
+
+          // 检查当前抓取状态
+          if (response.isScraping) {
+            isScraping = true;
+            updateStatus('scraping');
+            addLog('抓取进行中...', 'info');
+          } else {
+            // 尝试加载之前保存的数据
+            const hasSavedData = await loadData();
+            if (!hasSavedData) {
+              updateStatus('idle');
+            }
+          }
         }
       } catch (e) {
         addLog('Content script未响应，请刷新页面', 'warn');
@@ -114,6 +135,7 @@
     try {
       isScraping = true;
       scrapedData = null;
+      await clearData(); // 清除旧数据
       updateStatus('scraping');
       addLog('开始抓取...', 'info');
 
@@ -126,10 +148,13 @@
 
       if (response.success) {
         scrapedData = response.chats;
+        progressCurrent = response.total;
+        progressTotal = response.total;
+        await saveData(); // 保存数据
+        isScraping = false;
         updateStatus('completed');
         updateProgress(response.total, response.total);
         addLog(`✓ 抓取完成！共 ${response.total} 个对话`, 'success');
-        setTimeout(() => exportBtn.disabled = false, 500);
       } else {
         throw new Error(response.error || '抓取失败');
       }
@@ -140,6 +165,7 @@
 
       if (error.chats && error.chats.length > 0) {
         scrapedData = error.chats;
+        await saveData();
         exportBtn.disabled = false;
         addLog(`已保存 ${error.chats.length} 个对话`, 'warn');
       }
@@ -161,7 +187,7 @@
       addLog('抓取已停止', 'warn');
 
       if (scrapedData && scrapedData.length > 0) {
-        exportBtn.disabled = false;
+        await saveData();
       }
 
     } catch (error) {
@@ -200,6 +226,9 @@
       URL.revokeObjectURL(url);
 
       addLog(`已导出: ${filename}`, 'success');
+      clearData(); // 导出后清除存储的数据
+      scrapedData = null;
+      updateStatus('idle');
 
     } catch (error) {
       addLog(`导出失败: ${error.message}`, 'error');
@@ -217,8 +246,13 @@
     if (!sender.tab || sender.tab.id !== currentTabId) return;
 
     if (message.type === 'progress') {
+      progressCurrent = message.current;
+      progressTotal = message.total;
       updateProgress(message.current, message.total);
-      if (message.chats) scrapedData = message.chats;
+      if (message.chats) {
+        scrapedData = message.chats;
+        saveData();
+      }
     }
 
     if (message.type === 'log') {
@@ -228,6 +262,53 @@
 
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // 保存数据到存储
+  async function saveData() {
+    try {
+      await chrome.storage.local.set({
+        [STORAGE_KEY]: {
+          scrapedData,
+          currentStatus,
+          isScraping,
+          progressCurrent,
+          progressTotal,
+          savedAt: new Date().toISOString()
+        }
+      });
+    } catch (e) {
+      console.warn('保存数据失败:', e);
+    }
+  }
+
+  // 从存储加载数据
+  async function loadData() {
+    try {
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      if (result[STORAGE_KEY]) {
+        const saved = result[STORAGE_KEY];
+        if (saved.scrapedData && saved.scrapedData.length > 0) {
+          scrapedData = saved.scrapedData;
+          progressCurrent = saved.progressCurrent || 0;
+          progressTotal = saved.progressTotal || 0;
+          updateProgress(progressCurrent, progressTotal);
+          updateStatus('completed');
+          addLog(`已加载之前保存的数据 (${scrapedData.length} 个对话)`, 'info');
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('加载数据失败:', e);
+    }
+    return false;
+  }
+
+  // 清除存储的数据
+  async function clearData() {
+    try {
+      await chrome.storage.local.remove(STORAGE_KEY);
+    } catch (e) {}
   }
 
   init();
