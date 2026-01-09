@@ -1,12 +1,12 @@
 /**
- * Gemini Chat Scraper - Shadow DOM 检查工具
+ * Gemini Chat Scraper - DOM检查工具
  * 在Gemini页面控制台运行此脚本，检查Shadow DOM结构
  */
 
 (function() {
   'use strict';
 
-  console.log('%c🔍 Gemini Shadow DOM 检查工具', 'font-size: 16px; font-weight: bold; color: #4285f4;');
+  console.log('%c🔍 Gemini DOM 检查工具', 'font-size: 16px; font-weight: bold; color: #4285f4;');
 
   // Shadow DOM选择器查询器
   function querySelectorDeep(selectors) {
@@ -126,11 +126,7 @@
     if (shadowHost) {
       console.log('✓ 找到 ucs-standalone-app');
       console.log('  - tagName:', shadowHost.tagName);
-      console.log('  - className:', shadowHost.className);
       console.log('  - hasShadowRoot:', !!shadowHost.shadowRoot);
-      if (shadowHost.shadowRoot) {
-        console.log('  - shadowRoot children:', shadowHost.shadowRoot.children.length);
-      }
     } else {
       console.log('✗ 未找到 ucs-standalone-app');
     }
@@ -139,48 +135,26 @@
     return shadowHost;
   }
 
-  // 检查对话列表容器
+  // 检查对话列表
   function checkChatList() {
-    console.group('💬 对话列表容器');
+    console.group('💬 对话列表');
 
     const selectors = [
       'ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list',
-      'ucs-standalone-app .conversation-list',
-      '.conversation-list',
-      '[class*="conversation-list"]'
+      '.conversation-list'
     ];
 
     for (const selector of selectors) {
-      const element = querySelectorDeep(selector);
-      if (element) {
-        console.log(`✓ 找到: ${selector}`);
-        console.log('  - tagName:', element.tagName);
-        console.log('  - className:', element.className);
-        console.log('  - children数量:', element.children.length);
-        console.log('  - 可见性:', element.offsetParent !== null ? '可见' : '不可见');
-
-        // 尝试查找对话项
-        const itemSelectors = [
-          '.conversation-list-item',
-          '[class*="conversation-list-item"]',
-          '[class*="chat-item"]'
-        ];
-
-        for (const itemSelector of itemSelectors) {
-          const items = querySelectorAllDeep(
-            `ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list ${itemSelector}`
-          );
-          if (items.length > 0) {
-            console.log(`  - 对话项 (${itemSelector}): ${items.length} 个`);
-            break;
-          }
-        }
-
-        return element;
+      const container = querySelectorDeep(selector);
+      if (container) {
+        console.log(`✓ 找到对话列表: ${selector}`);
+        console.log('  - className:', container.className);
+        console.log('  - children数量:', container.children.length);
+        return container;
       }
     }
 
-    console.log('✗ 未找到对话列表容器');
+    console.log('✗ 未找到对话列表');
     console.groupEnd();
     return null;
   }
@@ -189,133 +163,242 @@
   function checkExpandButton() {
     console.group('📤 展开按钮');
 
-    const buttonSelectors = [
+    const selectors = [
       'ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list .show-more-container',
-      '.conversation-list .show-more-container',
       '.show-more-container'
     ];
 
-    let found = false;
-    for (const selector of buttonSelectors) {
+    for (const selector of selectors) {
       const button = querySelectorDeep(selector);
       if (button) {
-        console.log(`✓ 找到: ${selector}`);
+        console.log(`✓ 找到展开按钮: ${selector}`);
         console.log('  - 文本:', button.textContent?.trim());
-        console.log('  - 可见性:', button.offsetParent !== null ? '可见' : '不可见');
         console.log('  - disabled:', button.disabled);
-        found = true;
-        break;
+        console.groupEnd();
+        return button;
       }
     }
 
-    if (!found) {
-      console.log('✗ 未找到展开按钮');
-    }
-
-    console.groupEnd();
-  }
-
-  // 检查内容区域
-  function checkContentArea() {
-    console.group('📝 内容区域');
-
-    const contentSelectors = [
-      'ucs-standalone-app .content',
-      '.content',
-      '[class*="message-container"]',
-      '[class*="chat-content"]'
-    ];
-
-    for (const selector of contentSelectors) {
-      const element = querySelectorDeep(selector);
-      if (element) {
-        console.log(`✓ 找到: ${selector}`);
-        console.log('  - tagName:', element.tagName);
-        console.log('  - className:', element.className);
-        console.log('  - 可见性:', element.offsetParent !== null ? '可见' : '不可见');
-
-        // 查找消息
-        const messageSelectors = [
-          '[class*="message"]',
-          '[class*="text-container"]',
-          '[role="article"]'
-        ];
-
-        for (const msgSelector of messageSelectors) {
-          const messages = querySelectorAllDeep(
-            `ucs-standalone-app .content ${msgSelector}`
-          );
-          if (messages.length > 0) {
-            console.log(`  - 消息 (${msgSelector}): ${messages.length} 个`);
-            break;
-          }
-        }
-
-        return element;
-      }
-    }
-
-    console.log('✗ 未找到内容区域');
+    console.log('✗ 未找到展开按钮');
     console.groupEnd();
     return null;
   }
 
-  // 检查消息结构
-  function checkMessageStructure() {
-    console.group('💭 消息结构');
+  // 检查对话内容容器
+  function checkConversationContainer() {
+    console.group('💬 对话内容容器');
 
-    const messageSelectors = [
-      '[class*="message"]',
-      '[class*="text-container"]',
-      '[role="article"]'
+    const selectors = [
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation',
+      'ucs-conversation'
     ];
 
-    for (const selector of messageSelectors) {
-      const messages = querySelectorAllDeep(
-        `ucs-standalone-app .content ${selector}`
-      );
-
-      if (messages.length > 0) {
-        console.log(`找到 ${messages.length} 个消息元素 (${selector})`);
-
-        const samples = messages.slice(0, 3);
-        samples.forEach((msg, index) => {
-          console.group(`消息 ${index + 1}`);
-          console.log('类名:', msg.className);
-          console.log('文本预览:', msg.textContent?.trim().substring(0, 100));
-          console.groupEnd();
-        });
-
-        break;
+    for (const selector of selectors) {
+      const container = querySelectorDeep(selector);
+      if (container) {
+        console.log(`✓ 找到对话容器: ${selector}`);
+        console.log('  - tagName:', container.tagName);
+        console.log('  - className:', container.className);
+        console.groupEnd();
+        return container;
       }
     }
 
+    console.log('✗ 未找到对话容器');
     console.groupEnd();
+    return null;
+  }
+
+  // 检查所有turn
+  function checkTurns() {
+    console.group('🔄 对话轮次(turns)');
+
+    const turns = querySelectorAllDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn'
+    );
+
+    console.log(`找到 ${turns.length} 个对话轮次`);
+
+    if (turns.length > 0) {
+      console.log('示例分析:');
+      const firstTurn = turns[0];
+      console.log('  - 第一个turn类名:', firstTurn.className);
+
+      // 检查用户问题
+      const userText = querySelectorDeep(
+        '.question-block ucs-fast-markdown .markdown-document p span'
+      );
+      if (userText) {
+        console.log('  - 用户文本:', userText.textContent?.trim().substring(0, 50));
+      }
+
+      // 检查用户图片
+      const userImages = querySelectorAllDeep(
+        '.question-block ucs-summary ucs-summary-attachments .attachment-container ucs-markdown-image'
+      );
+      console.log(`  - 用户图片数量: ${userImages.length}`);
+
+      // 检查AI回答
+      const aiText = querySelectorDeep(
+        '.ucs-summary .summary-container .summary-contents ucs-text-streamer ucs-response-markdown ucs-fast-markdown .markdown-document'
+      );
+      if (aiText) {
+        console.log('  - AI回复存在: 是');
+      }
+
+      // 检查AI图片
+      const aiImages = querySelectorAllDeep(
+        '.ucs-summary .attachment-container ucs-markdown-image'
+      );
+      console.log(`  - AI图片数量: ${aiImages.length}`);
+    }
+
+    console.groupEnd();
+    return turns;
+  }
+
+  // 提取用户问题文本
+  function extractUserQuestion() {
+    const textEl = querySelectorDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn .question-block ucs-fast-markdown .markdown-document p span'
+    );
+    return textEl?.textContent?.trim() || '';
+  }
+
+  // 提取用户图片
+  function extractUserImages() {
+    const images = [];
+    const imageContainers = querySelectorAllDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn .question-block ucs-summary ucs-summary-attachments .attachment-container ucs-markdown-image'
+    );
+
+    imageContainers.forEach(imgEl => {
+      if (imgEl.shadowRoot) {
+        const img = imgEl.shadowRoot.querySelector('img');
+        if (img) {
+          images.push({
+            src: img.src || img.getAttribute('src'),
+            alt: img.alt || ''
+          });
+        }
+      }
+    });
+
+    return images;
+  }
+
+  // 提取AI回答
+  function extractAIResponse() {
+    const aiEl = querySelectorDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn .ucs-summary .summary-container .summary-contents ucs-text-streamer ucs-response-markdown ucs-fast-markdown .markdown-document'
+    );
+    return aiEl?.outerHTML || aiEl?.innerHTML || '';
+  }
+
+  // 提取AI图片
+  function extractAIImages() {
+    const images = [];
+    const imageContainers = querySelectorAllDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn .ucs-summary .attachment-container ucs-markdown-image'
+    );
+
+    imageContainers.forEach(imgEl => {
+      if (imgEl.shadowRoot) {
+        const img = imgEl.shadowRoot.querySelector('img');
+        if (img) {
+          images.push({
+            src: img.src || img.getAttribute('src'),
+            alt: img.alt || ''
+          });
+        }
+      }
+    });
+
+    return images;
   }
 
   // 完整检查
   function runAll() {
     console.clear();
-    console.log('%c🔍 Gemini Shadow DOM 完整检查', 'font-size: 20px; font-weight: bold; color: #4285f4;');
+    console.log('%c🔍 Gemini DOM 完整检查', 'font-size: 20px; font-weight: bold; color: #4285f4;');
     console.log('');
 
     checkPageInfo();
-    const shadowHost = checkShadowHost();
-    const chatList = checkChatList();
+    checkShadowHost();
+    checkChatList();
     checkExpandButton();
-    const contentArea = checkContentArea();
-    checkMessageStructure();
+    checkConversationContainer();
+    checkTurns();
 
     console.log('');
     console.log('%c✅ 检查完成！', 'color: #34a853;');
 
     return {
       timestamp: new Date().toISOString(),
-      url: window.location.href,
-      hasShadowHost: !!shadowHost,
-      hasChatList: !!chatList,
-      hasContentArea: !!contentArea
+      url: window.location.href
     };
+  }
+
+  // 提取完整数据示例
+  function extractSampleData() {
+    console.group('📊 示例数据提取');
+
+    const turns = querySelectorAllDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn'
+    );
+
+    const sampleData = {
+      totalTurns: turns.length,
+      turns: []
+    };
+
+    turns.slice(0, 2).forEach((turn, index) => {
+      const turnData = {
+        index: index + 1,
+        user: {
+          text: '',
+          images: []
+        },
+        ai: {
+          html: '',
+          images: []
+        }
+      };
+
+      // 用户文本
+      const userText = turn.querySelector ?
+        turn.querySelector('.question-block ucs-fast-markdown .markdown-document p span') : null;
+      if (!userText && turn.shadowRoot) {
+        const shadowText = turn.shadowRoot.querySelector(
+          '.question-block ucs-fast-markdown .markdown-document p span'
+        );
+        if (shadowText) {
+          turnData.user.text = shadowText.textContent?.trim() || '';
+        }
+      } else if (userText) {
+        turnData.user.text = userText.textContent?.trim() || '';
+      }
+
+      // AI HTML
+      const aiHtml = turn.querySelector ?
+        turn.querySelector('.ucs-summary .summary-container .summary-contents ucs-text-streamer ucs-response-markdown ucs-fast-markdown .markdown-document') : null;
+      if (!aiHtml && turn.shadowRoot) {
+        const shadowHtml = turn.shadowRoot.querySelector(
+          '.ucs-summary .summary-container .summary-contents ucs-text-streamer ucs-response-markdown ucs-fast-markdown .markdown-document'
+        );
+        if (shadowHtml) {
+          turnData.ai.html = shadowHtml.outerHTML?.substring(0, 200) || '';
+        }
+      } else if (aiHtml) {
+        turnData.ai.html = aiHtml.outerHTML?.substring(0, 200) || '';
+      }
+
+      sampleData.turns.push(turnData);
+    });
+
+    console.log(JSON.stringify(sampleData, null, 2));
+    console.groupEnd();
+    return sampleData;
   }
 
   // 导出结果
@@ -324,19 +407,14 @@
       timestamp: new Date().toISOString(),
       url: window.location.href,
 
-      shadowHost: null,
-      chatList: null,
-      content: null,
-      messages: []
-    };
+      shadowHost: !!document.querySelector('ucs-standalone-app'),
 
-    const shadowHost = document.querySelector('ucs-standalone-app');
-    if (shadowHost) {
-      results.shadowHost = {
-        tagName: shadowHost.tagName,
-        hasShadowRoot: !!shadowHost.shadowRoot
-      };
-    }
+      chatList: null,
+      conversationContainer: null,
+      turnsCount: 0,
+
+      sampleData: null
+    };
 
     const chatList = querySelectorDeep(
       'ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list'
@@ -348,26 +426,21 @@
       };
     }
 
-    const content = querySelectorDeep('ucs-standalone-app .content');
-    if (content) {
-      results.content = {
-        className: content.className,
-        childCount: content.children.length
-      };
+    const convContainer = querySelectorDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation'
+    );
+    if (convContainer) {
+      results.conversationContainer = convContainer.tagName;
     }
 
-    const messages = querySelectorAllDeep(
-      'ucs-standalone-app .content [class*="message"]'
+    const turns = querySelectorAllDeep(
+      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-results ucs-conversation .main .turn'
     );
-    messages.slice(0, 10).forEach((msg, index) => {
-      results.messages.push({
-        index: index + 1,
-        className: msg.className,
-        textPreview: msg.textContent?.trim().substring(0, 50)
-      });
-    });
+    results.turnsCount = turns.length;
 
-    console.log('%c📊 检查结果（可复制）:', 'color: #4285f4;');
+    results.sampleData = extractSampleData();
+
+    console.log('%c📊 检查结果:', 'color: #4285f4;');
     console.log(JSON.stringify(results, null, 2));
 
     return results;
@@ -381,18 +454,21 @@
     checkShadowHost,
     checkChatList,
     checkExpandButton,
-    checkContentArea,
-    checkMessageStructure,
+    checkConversationContainer,
+    checkTurns,
+    extractUserQuestion,
+    extractUserImages,
+    extractAIResponse,
+    extractAIImages,
     runAll,
+    extractSampleData,
     exportResults
   };
 
-  // 自动运行
-  console.log('%c运行 geminiScraperChecker.runAll() 执行完整检查', 'color: #34a853;');
-  console.log('可用命令:');
-  console.log('  - geminiScraperChecker.runAll() - 完整检查');
-  console.log('  - geminiScraperChecker.exportResults() - 导出结果');
-  console.log('  - geminiScraperChecker.checkChatList() - 检查对话列表');
-  console.log('  - geminiScraperChecker.checkContentArea() - 检查内容区域');
+  console.log('%c使用说明:', 'color: #34a853; font-weight: bold;');
+  console.log('  geminiScraperChecker.runAll() - 完整检查');
+  console.log('  geminiScraperChecker.checkTurns() - 检查对话轮次');
+  console.log('  geminiScraperChecker.extractSampleData() - 提取示例数据');
+  console.log('  geminiScraperChecker.exportResults() - 导出诊断结果');
 
 })();

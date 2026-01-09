@@ -1,7 +1,5 @@
 /**
  * Gemini Chat Scraper - Content Script
- * 第一阶段：基础文本抓取
- * 支持Shadow DOM
  */
 
 (function() {
@@ -11,6 +9,8 @@
   let isScraping = false;
   let scrapedChats = [];
   let currentChatIndex = 0;
+  let totalChats = 0;
+  let chatItems = [];
 
   // Logger类
   class Logger {
@@ -34,469 +34,262 @@
 
     async sendToPopup(level, message) {
       try {
-        await chrome.runtime.sendMessage({
-          type: 'log',
-          level: level,
-          message: message
-        });
-      } catch (e) {
-        // Popup可能未打开，忽略错误
-      }
+        await chrome.runtime.sendMessage({ type: 'log', level, message });
+      } catch (e) {}
     }
   }
 
   const logger = new Logger('info');
 
-  // 工具函数
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  // Shadow DOM选择器查询器
-  function querySelectorDeep(selectors) {
-    const parts = selectors.split(' ').filter(s => s);
-    if (parts.length === 0) return null;
-
-    let current = document;
-    for (const part of parts) {
-      if (!current) return null;
-
-      let element = current.querySelector ? current.querySelector(part) : null;
-
-      if (!element && current.shadowRoot) {
-        element = current.shadowRoot.querySelector(part);
+  // 获取对话列表项（点击内部的.list-item元素）
+  function getChatItems() {
+    const containers = document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel").shadowRoot.querySelectorAll(".conversation-list .conversation-container");
+    
+    const items = [];
+    containers.forEach(container => {
+      const listItem = container.querySelector('.list-item');
+      if (listItem) {
+        items.push(listItem);
       }
-
-      if (!element) {
-        element = querySelectorInShadow(current, part);
-      }
-
-      if (!element) return null;
-      current = element;
-    }
-
-    return current;
+    });
+    
+    logger.info(`找到 ${items.length} 个对话项（.list-item）`);
+    return items;
   }
 
-  // 在元素及其shadow DOM中递归查找
-  function querySelectorInShadow(root, selector) {
-    if (root.shadowRoot && root.shadowRoot.querySelector) {
-      const found = root.shadowRoot.querySelector(selector);
-      if (found) return found;
-    }
-
-    const children = root.querySelectorAll('*');
-    for (const child of children) {
-      if (child.shadowRoot) {
-        const found = child.shadowRoot.querySelector(selector);
-        if (found) return found;
-
-        const deepFound = querySelectorInShadow(child, selector);
-        if (deepFound) return deepFound;
-      }
-    }
-
-    return null;
+  // 获取所有turns
+  function getTurns() {
+    const app = document.querySelector('ucs-standalone-app');
+    if (!app || !app.shadowRoot) return [];
+    
+    const results = app.shadowRoot.querySelector(".ucs-standalone-outer-row-container ucs-results");
+    if (!results || !results.shadowRoot) return [];
+    
+    const conv = results.shadowRoot.querySelector("ucs-conversation");
+    if (!conv || !conv.shadowRoot) return [];
+    
+    return conv.shadowRoot.querySelectorAll(".main .turn");
   }
 
-  // 查询所有匹配元素
-  function querySelectorAllDeep(selectors) {
-    const parts = selectors.split(' ').filter(s => s);
-    if (parts.length === 0) return [];
+  // 提取单个turn的用户内容
+  function extractTurnUserContent(turn) {
+    const result = { text: '', images: [] };
 
-    const lastSelector = parts.pop();
-    const parentPath = parts.join(' ');
-
-    let parent;
-    if (parentPath) {
-      parent = querySelectorDeep(parentPath);
-    } else {
-      parent = document;
-    }
-
-    if (!parent) return [];
-
-    let results = [];
-
-    if (parent.querySelectorAll) {
-      results = Array.from(parent.querySelectorAll(lastSelector));
-    }
-
-    if (results.length === 0 && parent.shadowRoot) {
-      results = Array.from(parent.shadowRoot.querySelectorAll(lastSelector));
-    }
-
-    if (results.length === 0) {
-      results = querySelectorAllInShadow(parent, lastSelector);
-    }
-
-    return results;
-  }
-
-  // 递归查找所有匹配元素（包含shadow DOM）
-  function querySelectorAllInShadow(root, selector) {
-    let results = [];
-
-    if (root.shadowRoot) {
-      const shadowResults = root.shadowRoot.querySelectorAll(selector);
-      results = Array.from(shadowResults);
-    }
-
-    const children = root.querySelectorAll('*');
-    for (const child of children) {
-      if (child.shadowRoot) {
-        const shadowResults = child.shadowRoot.querySelectorAll(selector);
-        results = results.concat(Array.from(shadowResults));
-
-        const deepResults = querySelectorAllInShadow(child, selector);
-        results = results.concat(deepResults);
+    // 提取用户文本
+    const markdownEl = turn.querySelector(".question-block ucs-fast-markdown");
+    if (markdownEl && markdownEl.shadowRoot) {
+      const span = markdownEl.shadowRoot.querySelector(".markdown-document");
+      if (span) {
+        result.text = span.textContent.trim();
       }
     }
 
-    return results;
-  }
-
-  // 获取Shadow Host
-  function getShadowHost() {
-    return document.querySelector('ucs-standalone-app');
-  }
-
-  // 等待元素出现（支持Shadow DOM）
-  async function waitForElement(selector, timeout = 10000) {
-    const startTime = Date.now();
-    while (Date.now() - startTime < timeout) {
-      const element = querySelectorDeep(selector);
-      if (element && element.offsetParent !== null) {
-        return element;
-      }
-      await sleep(100);
-    }
-    throw new Error(`元素 ${selector} 未在 ${timeout}ms 内找到`);
-  }
-
-  // 检测是否是Gemini页面
-  function isGeminiPage() {
-    return window.location.hostname.includes('business.gemini.google');
-  }
-
-  // 获取对话列表容器（Shadow DOM）
-  function getChatListContainer() {
-    logger.info('正在获取对话列表容器（Shadow DOM）...');
-
-    const shadowSelectors = [
-      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list',
-      'ucs-standalone-app .conversation-list',
-      '[class*="conversation-list"]'
-    ];
-
-    for (const selector of shadowSelectors) {
-      try {
-        const container = querySelectorDeep(selector);
-        if (container) {
-          logger.info(`✓ 找到对话列表容器: ${selector}`);
-          return container;
+    // 提取用户图片（如果存在）
+    const summaryEl = turn.querySelector("ucs-summary");
+    if (summaryEl && summaryEl.shadowRoot) {
+      const attachmentsEl = summaryEl.shadowRoot.querySelector("ucs-summary-attachments");
+      if (attachmentsEl && attachmentsEl.shadowRoot) {
+        const containerEl = attachmentsEl.shadowRoot.querySelector(".attachment-container");
+        if (containerEl) {
+          const markdownImages = containerEl.querySelectorAll("ucs-markdown-image");
+          markdownImages.forEach(imgEl => {
+            if (imgEl && imgEl.shadowRoot) {
+              const img = imgEl.shadowRoot.querySelector("img");
+              if (img && img.src) {
+                result.images.push({ type: 'image', src: img.src, role: 'user' });
+              }
+            }
+          });
         }
-      } catch (e) {
-        logger.debug(`选择器 ${selector} 失败`);
       }
     }
 
-    throw new Error('找不到对话列表容器');
+    return result;
   }
 
-  // 展开所有对话
-  async function expandAllChats() {
-    logger.info('检查是否需要展开对话列表...');
+  // 提取单个turn的AI内容
+  function extractTurnAIResponse(turn) {
+    const result = { text: '', images: [] };
 
-    const expandSelectors = [
-      'ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list .show-more-container',
-      '.conversation-list .show-more-container',
-      '.show-more-container'
-    ];
+    const summaryEl = turn.querySelector("ucs-summary");
+    if (!summaryEl || !summaryEl.shadowRoot) {
+      return result;
+    }
 
-    let expanded = false;
-    for (const selector of expandSelectors) {
-      try {
-        const button = querySelectorDeep(selector);
-        if (button && button.offsetParent !== null && !button.disabled) {
-          const rect = button.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            logger.info('✓ 发现展开按钮，点击...');
-            button.click();
-            await sleep(2000);
-            expanded = true;
-            break;
+    // 尝试提取AI文本回复
+    const containerEl = summaryEl.shadowRoot.querySelector(".summary-container .summary-contents ucs-text-streamer");
+    if (containerEl && containerEl.shadowRoot) {
+      const responseEl = containerEl.shadowRoot.querySelector("ucs-response-markdown");
+      if (responseEl && responseEl.shadowRoot) {
+        const markdownEl = responseEl.shadowRoot.querySelector("ucs-fast-markdown");
+        if (markdownEl && markdownEl.shadowRoot) {
+          const docEl = markdownEl.shadowRoot.querySelector(".markdown-document");
+          if (docEl) {
+            result.text = docEl.outerHTML;
           }
         }
-      } catch (e) {
-        logger.debug(`展开按钮 ${selector} 未找到`);
       }
     }
 
-    if (!expanded) {
-      logger.info('未发现展开按钮或已全部展开');
+    // 如果没有文本，尝试提取AI图片（另一种回复方式）
+    if (!result.text) {
+      const summaryAttachmentsContainer = summaryEl.shadowRoot.querySelector("ucs-summary-attachments");
+      if (summaryAttachmentsContainer && summaryAttachmentsContainer.shadowRoot) {
+        const attachContainer = summaryAttachmentsContainer.shadowRoot.querySelector(".attachment-container");
+        if (attachContainer) {
+          const markdownImages = attachContainer.querySelectorAll("ucs-markdown-image");
+          markdownImages.forEach(imgEl => {
+            if (imgEl && imgEl.shadowRoot) {
+              const img = imgEl.shadowRoot.querySelector("img");
+              if (img && img.src) {
+                result.images.push({ type: 'image', src: img.src, role: 'ai' });
+              }
+            }
+          });
+        }
+      }
     }
 
-    return expanded;
+    return result;
   }
 
-  // 获取所有对话项
-  function getChatItems() {
-    const container = getChatListContainer();
+  // 提取所有消息（处理所有turns）
+  function extractMessages() {
+    const messages = [];
+    const turns = getTurns();
 
-    const itemSelectors = [
-      '.conversation-list-item',
-      '[class*="conversation-list-item"]',
-      '[class*="chat-item"]'
-    ];
+    logger.info(`找到 ${turns.length} 个对话轮次`);
 
-    for (const selector of itemSelectors) {
-      const items = querySelectorAllDeep(
-        `ucs-standalone-app .ucs-standalone-outer-row-container ucs-nav-panel .conversation-list ${selector}`
-      );
+    if (turns.length === 0) {
+      logger.warn('未找到任何对话轮次');
+      return messages;
+    }
 
-      if (items.length === 0) {
-        const directItems = container.querySelectorAll ?
-          Array.from(container.querySelectorAll(selector)) : [];
-        if (directItems.length > 0) {
-          logger.info(`✓ 找到 ${directItems.length} 个对话项 (${selector})`);
-          return directItems;
-        }
-      } else {
-        logger.info(`✓ 找到 ${items.length} 个对话项 (${selector})`);
-        return items;
+    // 处理每个turn
+    turns.forEach((turn, turnIndex) => {
+      // 提取用户内容
+      const userContent = extractTurnUserContent(turn);
+      if (userContent.text || userContent.images.length > 0) {
+        messages.push({
+          role: 'user',
+          text: userContent.text,
+          images: userContent.images,
+          turnIndex: turnIndex + 1
+        });
       }
-    }
 
-    const children = container.children ?
-      Array.from(container.children).filter(child => child.offsetParent !== null) : [];
-
-    if (children.length > 0) {
-      logger.info(`找到 ${children.length} 个子元素作为对话项`);
-      return children;
-    }
-
-    throw new Error('找不到对话项，请检查DOM结构');
-  }
-
-  // 提取单个对话的基本信息
-  function extractChatInfo(chatElement) {
-    const titleSelectors = [
-      '[class*="title"]',
-      '[class*="name"]',
-      'span',
-      'div'
-    ];
-
-    let title = '未命名对话';
-
-    for (const selector of titleSelectors) {
-      const titleEl = chatElement.querySelector ? chatElement.querySelector(selector) : null;
-      if (!titleEl && chatElement.shadowRoot) {
-        const shadowEl = chatElement.shadowRoot.querySelector(selector);
-        if (shadowEl && shadowEl.textContent.trim()) {
-          title = shadowEl.textContent.trim().substring(0, 100);
-          break;
-        }
-      } else if (titleEl && titleEl.textContent.trim()) {
-        title = titleEl.textContent.trim().substring(0, 100);
-        break;
+      // 提取AI内容（可能是文本或图片，不是同时存在）
+      const aiContent = extractTurnAIResponse(turn);
+      if (aiContent.text || aiContent.images.length > 0) {
+        messages.push({
+          role: 'ai',
+          text: aiContent.text,
+          images: aiContent.images,
+          turnIndex: turnIndex + 1
+        });
       }
-    }
+    });
 
-    return {
-      title: title,
-      element: chatElement
-    };
+    logger.info(`提取到 ${messages.length} 条消息（${turns.length} 轮对话）`);
+    return messages;
   }
 
   // 点击对话
   async function clickChat(chatElement) {
-    logger.debug('点击对话...');
+    logger.info('点击对话项...');
 
-    const clickMethods = [
-      () => chatElement.click(),
-      () => {
+    const urlBefore = window.location.href;
+
+    try {
+      chatElement.click();
+      logger.info('已点击，等待页面切换...');
+    } catch (e) {
+      try {
         const event = new MouseEvent('click', { bubbles: true, cancelable: true });
         chatElement.dispatchEvent(event);
-      },
-      () => {
-        chatElement.focus();
-        chatElement.dispatchEvent(new KeyboardEvent('Enter', { key: 'Enter', bubbles: true }));
-      }
-    ];
-
-    for (const method of clickMethods) {
-      try {
-        method();
-        await sleep(2000);
-
-        const contentElement = querySelectorDeep('.content');
-        if (contentElement && contentElement.offsetParent !== null) {
-          logger.debug('✓ 对话内容已加载');
-          return true;
-        }
-      } catch (e) {
-        logger.debug('点击失败，尝试其他方式');
+      } catch (e2) {
+        logger.error('点击失败');
+        return false;
       }
     }
 
-    await sleep(3000);
-    return true;
+    // 等待页面切换
+    const maxWaitTime = 15000;
+    let waitedTime = 0;
+
+    while (waitedTime < maxWaitTime) {
+      await sleep(1000);
+      waitedTime += 1000;
+
+      const urlAfter = window.location.href;
+      const turns = getTurns();
+
+      if (urlAfter !== urlBefore) {
+        logger.info(`URL变化`);
+      }
+
+      if (turns.length > 0) {
+        logger.info(`✓ 找到 ${turns.length} 轮对话`);
+        return true;
+      }
+    }
+
+    logger.warn('等待超时');
+    return false;
   }
 
-  // 获取对话内容区域
-  function getChatContentArea() {
-    const contentSelectors = [
-      'ucs-standalone-app .content',
-      '.content',
-      '[class*="message-container"]',
-      '[class*="chat-content"]'
-    ];
-
-    for (const selector of contentSelectors) {
-      const element = querySelectorDeep(selector);
-      if (element) {
-        return element;
-      }
-    }
-
-    return null;
-  }
-
-  // 等待对话内容加载
-  async function waitForChatContent() {
-    const contentSelectors = [
-      '.content',
-      '[class*="message-container"]',
-      '[class*="chat-content"]'
-    ];
-
-    for (const selector of contentSelectors) {
-      try {
-        await waitForElement(selector, 5000);
-        logger.debug(`✓ 找到内容区域: ${selector}`);
-        return;
-      } catch (e) {
-        logger.debug(`内容选择器 ${selector} 未找到`);
-      }
-    }
-
-    await sleep(2000);
-  }
-
-  // 提取消息内容
-  function extractMessages() {
-    const messages = [];
-
-    const contentArea = getChatContentArea();
-    if (!contentArea) {
-      logger.warn('找不到内容区域');
-      return messages;
-    }
-
-    const messageSelectors = [
-      '[class*="message"]',
-      '[class*="text-container"]',
-      '[role="article"]'
-    ];
-
-    let messageElements = [];
-
-    for (const selector of messageSelectors) {
-      const found = contentArea.querySelectorAll ?
-        Array.from(contentArea.querySelectorAll(selector)) : [];
-      if (found.length === 0 && contentArea.shadowRoot) {
-        found.push(...Array.from(contentArea.shadowRoot.querySelectorAll(selector)));
-      }
-
-      if (found.length > 0) {
-        messageElements = found;
-        logger.debug(`使用选择器 ${selector} 找到 ${messageElements.length} 个消息`);
-        break;
-      }
-    }
-
-    messageElements.forEach((msgEl, index) => {
-      try {
-        let text = msgEl.textContent?.trim();
-
-        if (!text && msgEl.shadowRoot) {
-          text = msgEl.shadowRoot.textContent?.trim();
-        }
-
-        if (text && text.length > 0) {
-          const isUser = msgEl.classList.contains('user') ||
-                        msgEl.classList.contains('human') ||
-                        msgEl.closest('[class*="user"]') ||
-                        (msgEl.getAttribute('class') || '').includes('user') ||
-                        (msgEl.getAttribute('class') || '').includes('human');
-
-          messages.push({
-            role: isUser ? 'user' : 'ai',
-            content: text,
-            index: index + 1
-          });
-        }
-      } catch (e) {
-        logger.warn(`提取消息 ${index} 失败: ${e.message}`);
-      }
-    });
-
-    logger.info(`✓ 提取到 ${messages.length} 条消息`);
-    return messages;
-  }
-
-  // 发送进度到popup
   async function sendProgress(current, total) {
     try {
       await chrome.runtime.sendMessage({
         type: 'progress',
-        current: current,
-        total: total,
+        current,
+        total,
         chats: scrapedChats
       });
-    } catch (e) {
-      // Popup可能未打开
-    }
+    } catch (e) {}
+  }
+
+  // 提取对话标题
+  function extractChatTitle(chatElement) {
+    return chatElement.textContent.trim().substring(0, 100) || '未命名对话';
   }
 
   // 抓取单个对话
   async function scrapeSingleChat(chatElement, index, total) {
     try {
-      logger.info(`开始抓取第 ${index}/${total} 个对话`);
+      const title = extractChatTitle(chatElement);
+      logger.info(`[${index}/${total}] "${title}"`);
 
-      const chatInfo = extractChatInfo(chatElement);
-      logger.info(`对话标题: ${chatInfo.title}`);
+      const clicked = await clickChat(chatElement);
+      if (!clicked) {
+        logger.warn(`[${index}/${total}] 点击后未加载内容`);
+      }
 
-      await clickChat(chatElement);
-      await waitForChatContent();
+      await sleep(15000);
+
       const messages = extractMessages();
 
       const chatData = {
         index: index,
-        title: chatInfo.title,
+        title: title,
         timestamp: new Date().toISOString(),
         messages: messages,
         messageCount: messages.length
       };
 
       scrapedChats.push(chatData);
-      logger.info(`✓ ${chatInfo.title} - ${messages.length} 条消息`);
+      logger.info(`[${index}/${total}] ✓ ${messages.length} 条消息`);
       await sendProgress(index, total);
 
       return chatData;
 
     } catch (error) {
-      logger.error(`抓取对话 ${index} 失败: ${error.message}`);
-
-      scrapedChats.push({
-        index: index,
-        title: '抓取失败',
-        error: error.message,
-        messages: []
-      });
-
+      logger.error(`[${index}/${total}] 失败: ${error.message}`);
+      scrapedChats.push({ index, title: '抓取失败', error: error.message, messages: [] });
       return null;
     }
   }
@@ -504,13 +297,11 @@
   // 主抓取流程
   async function startScraping() {
     if (isScraping) {
-      logger.warn('抓取已在进行中');
       return { success: false, error: '抓取已在进行中' };
     }
 
-    if (!isGeminiPage()) {
-      logger.error('当前不是Gemini页面');
-      return { success: false, error: '请在Gemini页面使用此功能' };
+    if (!window.location.hostname.includes('business.gemini.google')) {
+      return { success: false, error: '请在Gemini页面使用' };
     }
 
     try {
@@ -520,19 +311,11 @@
 
       logger.info('========================================');
       logger.info('开始抓取 Gemini 聊天记录');
-      logger.info('页面: ' + window.location.href);
       logger.info('========================================');
 
-      const shadowHost = getShadowHost();
-      if (shadowHost) {
-        logger.info('✓ 检测到Shadow DOM结构');
-      } else {
-        logger.warn('⚠ 未检测到Shadow Host');
-      }
-
-      await expandAllChats();
-      const chatItems = getChatItems();
-      logger.info(`共发现 ${chatItems.length} 个对话`);
+      chatItems = getChatItems();
+      totalChats = chatItems.length;
+      logger.info(`共发现 ${totalChats} 个对话`);
 
       if (chatItems.length === 0) {
         throw new Error('未找到任何对话项');
@@ -545,7 +328,7 @@
         }
 
         currentChatIndex = i + 1;
-        await scrapeSingleChat(chatItems[i], i + 1, chatItems.length);
+        await scrapeSingleChat(chatItems[i], i + 1, totalChats);
 
         if (i < chatItems.length - 1) {
           await sleep(500);
@@ -553,87 +336,63 @@
       }
 
       logger.info('========================================');
-      logger.info(`抓取完成！共抓取 ${scrapedChats.length} 个对话`);
+      logger.info(`抓取完成！共 ${scrapedChats.length} 个对话`);
       logger.info('========================================');
 
-      return {
-        success: true,
-        chats: scrapedChats,
-        total: scrapedChats.length
-      };
+      isScraping = false;
+      return { success: true, chats: scrapedChats, total: scrapedChats.length };
 
     } catch (error) {
-      logger.error(`抓取过程出错: ${error.message}`);
-      console.error(error);
-      return {
-        success: false,
-        error: error.message,
-        chats: scrapedChats
-      };
-    } finally {
+      logger.error(`抓取出错: ${error.message}`);
       isScraping = false;
+      return { success: false, error: error.message, chats: scrapedChats };
     }
   }
 
-  // 停止抓取
   function stopScraping() {
     isScraping = false;
-    logger.info('停止抓取请求已收到');
-    return { success: true, message: '正在停止...' };
+    logger.info('停止抓取');
+    return { success: true };
   }
 
-  // 获取当前状态
-  function getStatus() {
-    return {
-      isScraping: isScraping,
-      currentChatIndex: currentChatIndex,
-      scrapedCount: scrapedChats.length
-    };
-  }
-
-  // 导出辅助函数供调试使用
+  // 导出工具函数
   window.geminiScraperUtils = {
-    querySelectorDeep,
-    querySelectorAllDeep,
-    getShadowHost,
-    getChatListContainer,
     getChatItems,
-    getChatContentArea,
-    sleep
+    getTurns,
+    extractMessages,
+    extractTurnUserContent,
+    extractTurnAIResponse
   };
 
-  // 监听来自popup的消息
+  // 监听消息
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    logger.debug(`收到消息: ${request.action}`);
+    logger.debug(`消息: ${request.action}`);
 
     switch (request.action) {
       case 'startScraping':
-        startScraping()
-          .then(result => sendResponse(result))
-          .catch(error => sendResponse({ success: false, error: error.message }));
+        startScraping().then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
         return true;
 
       case 'stopScraping':
-        const result = stopScraping();
-        sendResponse(result);
-        break;
-
-      case 'getStatus':
-        sendResponse(getStatus());
+        sendResponse(stopScraping());
         break;
 
       case 'ping':
-        sendResponse({ success: true, message: 'Content script已就绪（支持Shadow DOM）' });
+        sendResponse({ success: true, message: 'Content script已就绪', isScraping });
         break;
 
       case 'debug':
-        const shadowHost = getShadowHost();
-        sendResponse({
-          success: true,
-          hasShadowHost: !!shadowHost,
-          chatListContainer: getChatListContainer() ? 'found' : 'not found',
-          chatItemsCount: getChatItems().length
-        });
+        try {
+          const turns = getTurns();
+          sendResponse({
+            success: true,
+            turnsCount: turns.length,
+            chatItemsCount: getChatItems().length,
+            isScraping
+          });
+        } catch (e) {
+          sendResponse({ success: false, error: e.message });
+        }
         break;
 
       default:
@@ -641,8 +400,6 @@
     }
   });
 
-  // 初始化完成
-  logger.info('Gemini Chat Scraper Content Script已加载（支持Shadow DOM）');
-  logger.info(`页面: ${window.location.href}`);
+  logger.info('Gemini Chat Scraper已加载');
 
 })();
