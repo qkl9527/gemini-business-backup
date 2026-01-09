@@ -10,18 +10,66 @@
     return document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel").shadowRoot.querySelector(".conversation-list");
   }
 
-  // 获取对话列表项（点击内部的.list-item元素）
-  function getChatItems() {
-    const containers = document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel").shadowRoot.querySelectorAll(".conversation-list .conversation-container");
-    
+  // 获取对话列表项（点击内部的.list-item元素，包含展开"显示更多"）
+  async function getChatItems() {
+    const navPanel = document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel");
+    if (!navPanel || !navPanel.shadowRoot) {
+      console.warn('未找到导航面板');
+      return [];
+    }
+    const navShadow = navPanel.shadowRoot;
+    const conversationList = navShadow.querySelector(".conversation-list");
+    if (!conversationList) {
+      console.warn('未找到对话列表');
+      return [];
+    }
+
     const items = [];
-    containers.forEach(container => {
+
+    // 获取初始列表
+    const initialContainers = conversationList.querySelectorAll(".conversation-container");
+    initialContainers.forEach(container => {
       const listItem = container.querySelector('.list-item');
       if (listItem) {
         items.push(listItem);
       }
     });
-    
+
+    console.log(`初始找到 ${items.length} 个对话项`);
+
+    // 检查是否有"显示更多"按钮
+    const showMoreContainer = conversationList.querySelector(".show-more-container");
+    if (showMoreContainer) {
+      const showMoreBtn = showMoreContainer.querySelector(".show-more");
+      if (showMoreBtn) {
+        console.log('发现"显示更多"按钮，尝试展开...');
+        try {
+          showMoreBtn.click();
+          console.log('已点击"显示更多"，等待加载...');
+
+          // 等待展开
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // 获取展开后的列表
+          const moreList = conversationList.querySelector(".more-conversation-list");
+          if (moreList) {
+            const moreContainers = moreList.querySelectorAll(".conversation-container");
+            console.log(`展开后新增 ${moreContainers.length} 个对话项`);
+
+            moreContainers.forEach(container => {
+              const listItem = container.querySelector('.list-item');
+              if (listItem) {
+                items.push(listItem);
+              }
+            });
+          }
+        } catch (e) {
+          console.warn(`展开"显示更多"失败: ${e.message}`);
+        }
+      }
+    }
+
+    console.log(`共找到 ${items.length} 个对话项`);
     return items;
   }
 
@@ -116,7 +164,7 @@
 
   // 测试点击
   async function testClick(index = 0) {
-    const items = getChatItems();
+    const items = await getChatItems();
     if (items.length === 0) {
       console.log('❌ 未找到对话列表');
       return false;
@@ -190,7 +238,7 @@
     const app = document.querySelector('ucs-standalone-app');
     console.log(`1. Shadow Host: ${app ? '✅' : '❌'}`);
 
-    const items = getChatItems();
+    const items = await getChatItems();
     console.log(`2. 对话列表: ${items.length} 个`);
 
     if (items.length > 0) {

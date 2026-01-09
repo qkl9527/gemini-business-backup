@@ -50,18 +50,66 @@
   }
 
   // 获取对话列表项（点击内部的.list-item元素）
-  function getChatItems() {
-    const containers = document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel").shadowRoot.querySelectorAll(".conversation-list .conversation-container");
-    
+  // 获取对话列表项（包含展开"显示更多"）
+  async function getChatItems() {
+    const navPanel = document.querySelector('ucs-standalone-app').shadowRoot.querySelector("ucs-nav-panel");
+    if (!navPanel || !navPanel.shadowRoot) {
+      logger.warn('未找到导航面板');
+      return [];
+    }
+    const navShadow = navPanel.shadowRoot;
+    const conversationList = navShadow.querySelector(".conversation-list");
+    if (!conversationList) {
+      logger.warn('未找到对话列表');
+      return [];
+    }
+
     const items = [];
-    containers.forEach(container => {
+
+    // 获取初始列表
+    const initialContainers = conversationList.querySelectorAll(".conversation-container");
+    initialContainers.forEach(container => {
       const listItem = container.querySelector('.list-item');
       if (listItem) {
         items.push(listItem);
       }
     });
-    
-    logger.info(`找到 ${items.length} 个对话项（.list-item）`);
+
+    logger.info(`初始找到 ${items.length} 个对话项`);
+
+    // 检查是否有"显示更多"按钮
+    const showMoreContainer = conversationList.querySelector(".show-more-container");
+    if (showMoreContainer) {
+      const showMoreBtn = showMoreContainer.querySelector(".show-more");
+      if (showMoreBtn) {
+        logger.info('发现"显示更多"按钮，尝试展开...');
+        try {
+          showMoreBtn.click();
+          logger.info('已点击"显示更多"，等待加载...');
+
+          // 等待展开
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+          // 获取展开后的列表
+          const moreList = conversationList.querySelector(".more-conversation-list");
+          if (moreList) {
+            const moreContainers = moreList.querySelectorAll(".conversation-container");
+            logger.info(`展开后新增 ${moreContainers.length} 个对话项`);
+
+            moreContainers.forEach(container => {
+              const listItem = container.querySelector('.list-item');
+              if (listItem) {
+                items.push(listItem);
+              }
+            });
+          }
+        } catch (e) {
+          logger.warn(`展开"显示更多"失败: ${e.message}`);
+        }
+      }
+    }
+
+    logger.info(`共找到 ${items.length} 个对话项`);
     return items;
   }
 
@@ -435,7 +483,7 @@
       logger.info(`间隔: ${config.delayBetweenChats}ms, 等待: ${config.delayAfterClick}ms`);
       logger.info('========================================');
 
-      chatItems = getChatItems();
+      chatItems = await getChatItems();
       totalChats = chatItems.length;
       logger.info(`共发现 ${totalChats} 个对话`);
 
@@ -638,18 +686,21 @@
         break;
 
       case 'debug':
-        try {
-          const turns = getTurns();
-          sendResponse({
-            success: true,
-            turnsCount: turns.length,
-            chatItemsCount: getChatItems().length,
-            isScraping
-          });
-        } catch (e) {
-          sendResponse({ success: false, error: e.message });
-        }
-        break;
+        (async () => {
+          try {
+            const turns = getTurns();
+            const items = await getChatItems();
+            sendResponse({
+              success: true,
+              turnsCount: turns.length,
+              chatItemsCount: items.length,
+              isScraping
+            });
+          } catch (e) {
+            sendResponse({ success: false, error: e.message });
+          }
+        })();
+        return true;
 
       case 'fetchImages':
         fetchImages(request.images).then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
