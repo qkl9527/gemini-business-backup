@@ -137,8 +137,22 @@ body {
 
 .controls {
   display: flex;
+  flex-direction: column;
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+
+.btn-row-export {
+  margin-top: 4px;
+}
+
+.btn-row-export .btn {
+  flex: 1;
 }
 
 .btn {
