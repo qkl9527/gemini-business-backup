@@ -308,6 +308,87 @@ body {
   margin-bottom: 0;
 }
 
+.config-section {
+  background: var(--card-bg);
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  margin-top: 16px;
+}
+
+.config-section details {
+  cursor: pointer;
+}
+
+.config-section summary {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.config-section summary::marker {
+  color: var(--text-secondary);
+}
+
+.config-content {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-color);
+  border-radius: 8px;
+}
+
+.config-item {
+  margin-bottom: 12px;
+}
+
+.config-item:last-of-type {
+  margin-bottom: 16px;
+}
+
+.config-item label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.config-item input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: white;
+}
+
+.config-item input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+}
+
+.config-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-secondary {
+  background: var(--text-secondary);
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--text-primary);
+}
+
+.config-status {
+  font-size: 12px;
+  color: var(--success-color);
+}
+
 /* 滚动条样式 */
 .log-container::-webkit-scrollbar {
   width: 6px;

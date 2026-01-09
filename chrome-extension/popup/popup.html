@@ -76,6 +76,26 @@
         </div>
       </details>
     </section>
+
+    <section class="config-section">
+      <details open>
+        <summary>⚙️ 高级配置</summary>
+        <div class="config-content">
+          <div class="config-item">
+            <label for="delay-between-chats">对话间隔时间 (毫秒)</label>
+            <input type="number" id="delay-between-chats" min="100" max="10000" value="500" step="100">
+          </div>
+          <div class="config-item">
+            <label for="delay-after-click">点击后等待时间 (毫秒)</label>
+            <input type="number" id="delay-after-click" min="500" max="10000" value="3000" step="500">
+          </div>
+          <div class="config-actions">
+            <button id="save-config" class="btn btn-secondary">保存配置</button>
+            <span id="config-status" class="config-status"></span>
+          </div>
+        </div>
+      </details>
+    </section>
   </div>
 
   <script src="popup.js"></script>

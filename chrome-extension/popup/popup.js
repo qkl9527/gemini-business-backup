@@ -9,6 +9,8 @@
   const stopBtn = document.getElementById('stop-btn');
   const exportBtn = document.getElementById('export-btn');
   const clearLogsBtn = document.getElementById('clear-logs');
+  const saveConfigBtn = document.getElementById('save-config');
+  const configStatusEl = document.getElementById('config-status');
   const statusEl = document.getElementById('status');
   const progressTextEl = document.getElementById('progress-text');
   const scrapedCountEl = document.getElementById('scraped-count');
@@ -23,6 +25,12 @@
   let progressTotal = 0;
 
   const STORAGE_KEY = 'gemini_scraper_data';
+  const CONFIG_KEY = 'gemini_scraper_config';
+
+  const DEFAULT_CONFIG = {
+    delayBetweenChats: 500,
+    delayAfterClick: 3000
+  };
 
   function updateStatus(status, message = null) {
     currentStatus = status;
@@ -92,6 +100,9 @@
         return;
       }
 
+      // 加载配置
+      await loadConfig();
+
       updateStatus('connecting');
       addLog('正在连接...', 'info');
 
@@ -142,8 +153,12 @@
       logContainer.innerHTML = '';
       addLog('正在连接页面...', 'info');
 
+      // 获取配置
+      const config = await getConfig();
+
       const response = await chrome.tabs.sendMessage(currentTabId, {
-        action: 'startScraping'
+        action: 'startScraping',
+        config: config
       });
 
       if (response.success) {
@@ -310,6 +325,57 @@
       await chrome.storage.local.remove(STORAGE_KEY);
     } catch (e) {}
   }
+
+  // 加载配置
+  async function loadConfig() {
+    try {
+      const result = await chrome.storage.local.get(CONFIG_KEY);
+      const config = result[CONFIG_KEY] || DEFAULT_CONFIG;
+      document.getElementById('delay-between-chats').value = config.delayBetweenChats;
+      document.getElementById('delay-after-click').value = config.delayAfterClick;
+    } catch (e) {
+      console.warn('加载配置失败:', e);
+    }
+  }
+
+  // 保存配置
+  async function saveConfig() {
+    const delayBetweenChats = parseInt(document.getElementById('delay-between-chats').value) || 500;
+    const delayAfterClick = parseInt(document.getElementById('delay-after-click').value) || 3000;
+
+    const config = {
+      delayBetweenChats,
+      delayAfterClick
+    };
+
+    try {
+      await chrome.storage.local.set({ [CONFIG_KEY]: config });
+      configStatusEl.textContent = '已保存';
+      setTimeout(() => configStatusEl.textContent = '', 2000);
+      return config;
+    } catch (e) {
+      console.warn('保存配置失败:', e);
+      return null;
+    }
+  }
+
+  // 获取当前配置
+  async function getConfig() {
+    try {
+      const result = await chrome.storage.local.get(CONFIG_KEY);
+      return result[CONFIG_KEY] || DEFAULT_CONFIG;
+    } catch (e) {
+      return DEFAULT_CONFIG;
+    }
+  }
+
+  // 配置保存按钮
+  saveConfigBtn.addEventListener('click', async () => {
+    const config = await saveConfig();
+    if (config) {
+      addLog(`配置已保存: 间隔 ${config.delayBetweenChats}ms, 等待 ${config.delayAfterClick}ms`, 'success');
+    }
+  });
 
   init();
 

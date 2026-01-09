@@ -11,6 +11,10 @@
   let currentChatIndex = 0;
   let totalChats = 0;
   let chatItems = [];
+  let config = {
+    delayBetweenChats: 1000,
+    delayAfterClick: 8000
+  };
 
   // Logger类
   class Logger {
@@ -269,7 +273,7 @@
         logger.warn(`[${index}/${total}] 点击后未加载内容`);
       }
 
-      await sleep(8000);
+      await sleep(config.delayAfterClick);
 
       const messages = extractMessages();
 
@@ -295,7 +299,7 @@
   }
 
   // 主抓取流程
-  async function startScraping() {
+  async function startScraping(requestConfig = {}) {
     if (isScraping) {
       return { success: false, error: '抓取已在进行中' };
     }
@@ -304,13 +308,20 @@
       return { success: false, error: '请在Gemini页面使用' };
     }
 
+    // 应用配置
+    config = {
+      delayBetweenChats: requestConfig.delayBetweenChats || 500,
+      delayAfterClick: requestConfig.delayAfterClick || 3000
+    };
+
     try {
       isScraping = true;
       scrapedChats = [];
       currentChatIndex = 0;
 
       logger.info('========================================');
-      logger.info('开始抓取 Gemini 聊天记录');
+      logger.info(`开始抓取 Gemini 聊天记录`);
+      logger.info(`间隔: ${config.delayBetweenChats}ms, 等待: ${config.delayAfterClick}ms`);
       logger.info('========================================');
 
       chatItems = getChatItems();
@@ -331,7 +342,7 @@
         await scrapeSingleChat(chatItems[i], i + 1, totalChats);
 
         if (i < chatItems.length - 1) {
-          await sleep(500);
+          await sleep(config.delayBetweenChats);
         }
       }
 
@@ -370,7 +381,7 @@
 
     switch (request.action) {
       case 'startScraping':
-        startScraping().then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
+        startScraping(request.config).then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
         return true;
 
       case 'stopScraping':
