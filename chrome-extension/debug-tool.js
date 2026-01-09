@@ -241,12 +241,57 @@
     extractTurnAIResponse,
     extractMessages,
     testClick,
-    runFullTest
+    runFullTest,
+    testImageFetch
   };
+
+  async function testImageFetch() {
+    console.clear();
+    console.log('%c🖼️ 图片获取测试', 'font-size: 16px; font-weight: bold; color: #4285f4;');
+
+    const messages = extractMessages();
+    const allImages = [];
+
+    messages.forEach(msg => {
+      msg.images.forEach(img => {
+        allImages.push({ src: img.src, role: img.role, messageRole: msg.role });
+      });
+    });
+
+    if (allImages.length === 0) {
+      console.log('❌ 未找到任何图片');
+      return;
+    }
+
+    console.log(`找到 ${allImages.length} 张图片`);
+
+    for (let i = 0; i < Math.min(allImages.length, 3); i++) {
+      const img = allImages[i];
+      console.log(`\n--- 测试图片 ${i + 1} ---`);
+      console.log(`URL: ${img.src.substring(0, 80)}...`);
+      console.log(`Role: ${img.role}`);
+
+      // 尝试在DOM中查找
+      const domImg = document.querySelectorAll('img');
+      let foundInDOM = false;
+      for (const d of domImg) {
+        if (d.src === img.src) {
+          console.log(`✅ 在DOM中找到对应img元素`);
+          console.log(`   naturalWidth: ${d.naturalWidth}, naturalHeight: ${d.naturalHeight}`);
+          foundInDOM = true;
+          break;
+        }
+      }
+      if (!foundInDOM) {
+        console.log(`⚠️ 未在DOM中找到对应img元素`);
+      }
+    }
+  }
 
   console.log('');
   console.log('%c命令:', 'color: #34a853; font-weight: bold;');
   console.log('  geminiDebug.runFullTest()           - 完整测试');
+  console.log('  geminiDebug.testImageFetch()        - 测试图片获取');
   console.log('  geminiDebug.testClick(0)            - 测试点击');
   console.log('  geminiDebug.extractMessages()       - 提取所有消息');
   console.log('  geminiDebug.getTurns()              - 获取所有对话轮次');

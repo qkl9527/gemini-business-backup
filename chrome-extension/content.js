@@ -43,7 +43,7 @@
     }
   }
 
-  const logger = new Logger('info');
+  const logger = new Logger('debug');
 
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -79,8 +79,90 @@
     return conv.shadowRoot.querySelectorAll(".main .turn");
   }
 
-  // 提取单个turn的用户内容
-  function extractTurnUserContent(turn) {
+  // 从img元素获取图片数据（直接在DOM中提取，绕过CORS）
+  async function getImageDataFromElement(imgEl) {
+    try {
+      if (!imgEl || !imgEl.src) return null;
+
+      if (imgEl.src.startsWith('data:')) {
+        const base64Data = imgEl.src.split(',')[1];
+        const mimeType = imgEl.src.split(';')[0].replace('data:', '') || 'image/png';
+        const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+        return {
+          data: Array.from(binaryData),
+          mimeType: mimeType,
+          originalSrc: imgEl.src
+        };
+      }
+
+      // 图片已加载完成
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        return await drawImageToBlob(imgEl);
+      }
+
+      // 图片未加载，等待
+      if (!imgEl.complete) {
+        logger.debug('图片未完成加载，等待...');
+        try {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('timeout')), 3000);
+            imgEl.onload = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            imgEl.onerror = () => {
+              clearTimeout(timeout);
+              reject(new Error('error'));
+            };
+          });
+        } catch (e) {
+          logger.debug(`图片加载结果: ${e.message}`);
+        }
+      }
+
+      // 再次检查尺寸
+      if (imgEl.naturalWidth > 0) {
+        return await drawImageToBlob(imgEl);
+      }
+
+      logger.warn(`无法获取图片数据，尺寸为0`);
+      return null;
+    } catch (e) {
+      logger.warn(`获取图片数据失败: ${e.message}`);
+      return null;
+    }
+  }
+
+  async function drawImageToBlob(imgEl) {
+    return new Promise((resolve) => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = imgEl.naturalWidth;
+        canvas.height = imgEl.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            blob.arrayBuffer().then(buffer => {
+              resolve({
+                data: Array.from(new Uint8Array(buffer)),
+                mimeType: blob.type || 'image/png',
+                originalSrc: imgEl.src
+              });
+            }).catch(() => resolve(null));
+          } else {
+            resolve(null);
+          }
+        }, 'image/png', 0.95);
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  // 提取单个turn的用户内容（包含图片下载）
+  async function extractTurnUserContent(turn) {
     const result = { text: '', images: [] };
 
     // 提取用户文本
@@ -92,7 +174,7 @@
       }
     }
 
-    // 提取用户图片（如果存在）
+    // 提取用户图片（立即下载图片数据）
     const summaryEl = turn.querySelector("ucs-summary");
     if (summaryEl && summaryEl.shadowRoot) {
       const attachmentsEl = summaryEl.shadowRoot.querySelector("ucs-summary-attachments");
@@ -100,14 +182,26 @@
         const containerEl = attachmentsEl.shadowRoot.querySelector(".attachment-container");
         if (containerEl) {
           const markdownImages = containerEl.querySelectorAll("ucs-markdown-image");
-          markdownImages.forEach(imgEl => {
+          for (const imgEl of markdownImages) {
             if (imgEl && imgEl.shadowRoot) {
               const img = imgEl.shadowRoot.querySelector("img");
               if (img && img.src) {
-                result.images.push({ type: 'image', src: img.src, role: 'user' });
+                let imgData = null;
+                try {
+                  imgData = await getImageDataFromElement(img);
+                } catch (e) {
+                  logger.debug(`图片下载跳过: ${e.message}`);
+                }
+                result.images.push({
+                  type: 'image',
+                  src: img.src,
+                  role: 'user',
+                  data: imgData ? imgData.data : null,
+                  mimeType: imgData ? imgData.mimeType : null
+                });
               }
             }
-          });
+          }
         }
       }
     }
@@ -115,8 +209,8 @@
     return result;
   }
 
-  // 提取单个turn的AI内容
-  function extractTurnAIResponse(turn) {
+  // 提取单个turn的AI内容（包含图片下载）
+  async function extractTurnAIResponse(turn) {
     const result = { text: '', images: [] };
 
     const summaryEl = turn.querySelector("ucs-summary");
@@ -146,14 +240,26 @@
         const attachContainer = summaryAttachmentsContainer.shadowRoot.querySelector(".attachment-container");
         if (attachContainer) {
           const markdownImages = attachContainer.querySelectorAll("ucs-markdown-image");
-          markdownImages.forEach(imgEl => {
+          for (const imgEl of markdownImages) {
             if (imgEl && imgEl.shadowRoot) {
               const img = imgEl.shadowRoot.querySelector("img");
               if (img && img.src) {
-                result.images.push({ type: 'image', src: img.src, role: 'ai' });
+                let imgData = null;
+                try {
+                  imgData = await getImageDataFromElement(img);
+                } catch (e) {
+                  logger.debug(`图片下载跳过: ${e.message}`);
+                }
+                result.images.push({
+                  type: 'image',
+                  src: img.src,
+                  role: 'ai',
+                  data: imgData ? imgData.data : null,
+                  mimeType: imgData ? imgData.mimeType : null
+                });
               }
             }
-          });
+          }
         }
       }
     }
@@ -161,8 +267,8 @@
     return result;
   }
 
-  // 提取所有消息（处理所有turns）
-  function extractMessages() {
+  // 提取所有消息（处理所有turns，包含图片下载）
+  async function extractMessages() {
     const messages = [];
     const turns = getTurns();
 
@@ -174,31 +280,31 @@
     }
 
     // 处理每个turn
-    turns.forEach((turn, turnIndex) => {
+    for (const turn of turns) {
       // 提取用户内容
-      const userContent = extractTurnUserContent(turn);
+      const userContent = await extractTurnUserContent(turn);
       if (userContent.text || userContent.images.length > 0) {
         messages.push({
           role: 'user',
           text: userContent.text,
           images: userContent.images,
-          turnIndex: turnIndex + 1
+          turnIndex: messages.length + 1
         });
       }
 
       // 提取AI内容（可能是文本或图片，不是同时存在）
-      const aiContent = extractTurnAIResponse(turn);
+      const aiContent = await extractTurnAIResponse(turn);
       if (aiContent.text || aiContent.images.length > 0) {
         messages.push({
           role: 'ai',
           text: aiContent.text,
           images: aiContent.images,
-          turnIndex: turnIndex + 1
+          turnIndex: messages.length + 1
         });
       }
-    });
+    }
 
-    logger.info(`提取到 ${messages.length} 条消息（${turns.length} 轮对话）`);
+    logger.info(`提取到 ${messages.length} 条消息`);
     return messages;
   }
 
@@ -275,7 +381,12 @@
 
       await sleep(config.delayAfterClick);
 
-      const messages = extractMessages();
+      let messages = [];
+      try {
+        messages = await extractMessages();
+      } catch (e) {
+        logger.warn(`[${index}/${total}] 提取消息失败: ${e.message}`);
+      }
 
       const chatData = {
         index: index,
@@ -339,7 +450,9 @@
         }
 
         currentChatIndex = i + 1;
+        logger.info(`开始处理第 ${i + 1}/${totalChats} 个对话`);
         await scrapeSingleChat(chatItems[i], i + 1, totalChats);
+        logger.info(`第 ${i + 1}/${totalChats} 个对话处理完成`);
 
         if (i < chatItems.length - 1) {
           await sleep(config.delayBetweenChats);
@@ -364,6 +477,138 @@
     isScraping = false;
     logger.info('停止抓取');
     return { success: true };
+  }
+
+  async function fetchImages(images) {
+    const result = {};
+    const processedUrls = new Set();
+    let count = 0;
+    let failed = 0;
+
+    logger.info(`开始获取 ${images.length} 张图片`);
+
+    for (const img of images) {
+      if (!img || !img.src) {
+        logger.warn('跳过无效图片数据');
+        continue;
+      }
+
+      if (processedUrls.has(img.src)) {
+        logger.debug(`跳过重复图片: ${img.src.substring(0, 50)}...`);
+        continue;
+      }
+
+      try {
+        let arrayBuffer;
+        let mimeType;
+        let ext;
+
+        if (img.src.startsWith('blob:')) {
+          logger.debug(`Fetching blob URL: ${img.src.substring(0, 80)}...`);
+
+          try {
+            const response = await fetch(img.src);
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+            }
+            arrayBuffer = await response.arrayBuffer();
+            mimeType = response.headers.get('content-type') || 'image/png';
+            ext = mimeType.split('/')[1]?.split(';')[0] || 'png';
+          } catch (fetchError) {
+            logger.warn(`fetch失败，尝试从DOM获取: ${fetchError.message}`);
+            const domResult = await fetchImageFromDOM(img.src);
+            if (domResult) {
+              arrayBuffer = domResult.buffer;
+              mimeType = domResult.mimeType;
+              ext = domResult.mimeType.split('/')[1] || 'png';
+            } else {
+              throw new Error('无法从DOM获取');
+            }
+          }
+
+        } else if (img.src.startsWith('data:')) {
+          logger.debug('解析 data URI');
+          try {
+            const base64Data = img.src.split(',')[1];
+            if (!base64Data) throw new Error('Invalid data URI');
+            mimeType = img.src.split(';')[0].replace('data:', '') || 'image/png';
+            ext = mimeType.split('/')[1]?.split(';')[0] || 'png';
+            arrayBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
+          } catch (e) {
+            logger.warn(`解析data URI失败: ${e.message}`);
+            failed++;
+            continue;
+          }
+        } else {
+          logger.warn(`不支持的URL类型: ${img.src.substring(0, 50)}`);
+          continue;
+        }
+
+        const cleanMimeType = mimeType.split(';')[0].trim();
+        const localPath = `images/image_${Date.now()}_${count}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
+
+        result[localPath] = {
+          data: Array.from(new Uint8Array(arrayBuffer)),
+          mimeType: cleanMimeType,
+          originalSrc: img.src,
+          originalRole: img.role
+        };
+
+        processedUrls.add(img.src);
+        count++;
+        logger.debug(`成功获取图片 ${count}: ${localPath}`);
+
+      } catch (e) {
+        failed++;
+        logger.warn(`获取图片失败: ${img.src.substring(0, 50)}... - ${e.message}`);
+      }
+    }
+
+    logger.info(`图片获取完成: ${count} 成功, ${failed} 失败`);
+    return { success: true, images: result, count, failed };
+  }
+
+  async function fetchImageFromDOM(blobUrl) {
+    try {
+      const allImages = document.querySelectorAll('img');
+      for (const img of allImages) {
+        if (img.src === blobUrl || img.src.startsWith(blobUrl)) {
+          logger.debug(`在DOM中找到对应img元素`);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+
+          if (canvas.width === 0 || canvas.height === 0) {
+            logger.warn(`图片尺寸为0，跳过`);
+            continue;
+          }
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          return new Promise((resolve) => {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                blob.arrayBuffer().then(buffer => {
+                  resolve({
+                    buffer: buffer,
+                    mimeType: blob.type || 'image/png'
+                  });
+                }).catch(() => resolve(null));
+              } else {
+                resolve(null);
+              }
+            }, 'image/png', 0.95);
+          });
+        }
+      }
+      logger.warn(`在DOM中未找到对应img元素: ${blobUrl.substring(0, 50)}`);
+      return null;
+    } catch (e) {
+      logger.warn(`从DOM获取图片失败: ${e.message}`);
+      return null;
+    }
   }
 
   // 导出工具函数
@@ -405,6 +650,10 @@
           sendResponse({ success: false, error: e.message });
         }
         break;
+
+      case 'fetchImages':
+        fetchImages(request.images).then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
+        return true;
 
       default:
         sendResponse({ success: false, error: '未知命令' });

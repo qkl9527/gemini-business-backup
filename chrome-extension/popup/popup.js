@@ -8,6 +8,8 @@
   const startBtn = document.getElementById('start-btn');
   const stopBtn = document.getElementById('stop-btn');
   const exportBtn = document.getElementById('export-btn');
+  const exportZipBtn = document.getElementById('export-zip-btn');
+  const exportMdBtn = document.getElementById('export-md-btn');
   const clearLogsBtn = document.getElementById('clear-logs');
   const saveConfigBtn = document.getElementById('save-config');
   const configStatusEl = document.getElementById('config-status');
@@ -23,6 +25,8 @@
   let currentStatus = 'idle';
   let progressCurrent = 0;
   let progressTotal = 0;
+  let imageProgressCurrent = 0;
+  let imageProgressTotal = 0;
 
   const STORAGE_KEY = 'gemini_scraper_data';
   const CONFIG_KEY = 'gemini_scraper_config';
@@ -53,6 +57,8 @@
     startBtn.disabled = ['scraping', 'connecting'].includes(status);
     stopBtn.disabled = !['scraping'].includes(status);
     exportBtn.disabled = !canExport;
+    exportZipBtn.disabled = !canExport;
+    exportMdBtn.disabled = !canExport;
   }
 
   function updateProgress(current, total) {
@@ -60,6 +66,26 @@
     progressTextEl.textContent = `${current} / ${total}`;
     scrapedCountEl.textContent = current;
     progressBar.style.width = `${percent}%`;
+  }
+
+  function showImageProgress(show) {
+    const container = document.getElementById('image-progress-container');
+    if (container) {
+      container.style.display = show ? 'block' : 'none';
+    }
+  }
+
+  function updateImageProgress(current, total) {
+    const container = document.getElementById('image-progress-container');
+    if (container) {
+      const percent = total > 0 ? (current / total * 100).toFixed(1) : 0;
+      const textEl = document.getElementById('image-progress-text');
+      const barEl = document.getElementById('image-progress-bar');
+      if (textEl) textEl.textContent = `${current} / ${total}`;
+      if (barEl) barEl.style.width = `${percent}%`;
+    }
+    imageProgressCurrent = current;
+    imageProgressTotal = total;
   }
 
   function addLog(message, level = 'info') {
@@ -241,12 +267,332 @@
       URL.revokeObjectURL(url);
 
       addLog(`已导出: ${filename}`, 'success');
-      clearData(); // 导出后清除存储的数据
+      clearData();
       scrapedData = null;
       updateStatus('idle');
 
     } catch (error) {
       addLog(`导出失败: ${error.message}`, 'error');
+    }
+  });
+
+  // HTML转Markdown（基础转换）
+  function htmlToMarkdown(html) {
+    if (!html) return '';
+
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+
+    let text = temp.innerHTML;
+
+    text = text.replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n');
+    text = text.replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n');
+    text = text.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n');
+    text = text.replace(/<h4[^>]*>(.*?)<\/h4>/gi, '#### $1\n\n');
+    text = text.replace(/<h5[^>]*>(.*?)<\/h5>/gi, '##### $1\n\n');
+    text = text.replace(/<h6[^>]*>(.*?)<\/h6>/gi, '###### $1\n\n');
+
+    text = text.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**');
+    text = text.replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**');
+    text = text.replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*');
+    text = text.replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*');
+
+    text = text.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`');
+
+    text = text.replace(/<pre[^>]*>(.*?)<\/pre>/gis, '```\n$1\n```\n');
+
+    text = text.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)');
+
+    text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n');
+
+    text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n');
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+
+    text = text.replace(/<[^>]+>/g, '');
+
+    text = text.replace(/&nbsp;/g, ' ');
+    text = text.replace(/&amp;/g, '&');
+    text = text.replace(/&lt;/g, '<');
+    text = text.replace(/&gt;/g, '>');
+    text = text.replace(/&quot;/g, '"');
+
+    text = text.replace(/\n{3,}/g, '\n\n');
+
+    return text.trim();
+  }
+
+  // 导出Markdown
+  exportMdBtn.addEventListener('click', () => {
+    if (!scrapedData || scrapedData.length === 0) {
+      addLog('没有可导出的数据', 'warn');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const filename = `gemini-chats-${timestamp}-${scrapedData.length}.md`;
+
+      let mdContent = `# Gemini Chats Export\n\n`;
+      mdContent += `Export Time: ${new Date().toISOString()}\n`;
+      mdContent += `Total Chats: ${scrapedData.length}\n\n`;
+      mdContent += `---\n\n`;
+
+      for (let i = 0; i < scrapedData.length; i++) {
+        const chat = scrapedData[i];
+        mdContent += `## Chat ${i + 1}: ${chat.title || 'Untitled'}\n\n`;
+        mdContent += `*Scraped at: ${chat.timestamp || 'unknown'}*\n\n`;
+        mdContent += `---\n\n`;
+
+        for (const msg of chat.messages || []) {
+          const role = msg.role === 'user' ? '👤 User' : '🤖 Gemini';
+          mdContent += `### ${role}\n\n`;
+
+          if (msg.text) {
+            const markdown = htmlToMarkdown(msg.text);
+            mdContent += `${markdown}\n\n`;
+          }
+
+          if (msg.images && msg.images.length > 0) {
+            for (const img of msg.images) {
+              if (img.type === 'image') {
+                mdContent += `![Image](${img.src || img.localPath || 'image'})\n\n`;
+              }
+            }
+          }
+
+          mdContent += `---\n\n`;
+        }
+
+        mdContent += `\n\n`;
+      }
+
+      const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      addLog(`已导出: ${filename}`, 'success');
+
+    } catch (error) {
+      addLog(`Markdown导出失败: ${error.message}`, 'error');
+      console.error(error);
+    }
+  });
+
+  // 导出ZIP（含图片）
+  exportZipBtn.addEventListener('click', async () => {
+    if (!scrapedData || scrapedData.length === 0) {
+      addLog('没有可导出的数据', 'warn');
+      return;
+    }
+
+    if (typeof JSZip === 'undefined') {
+      addLog('JSZip库未加载', 'error');
+      return;
+    }
+
+    try {
+      addLog('正在收集图片URL...', 'info');
+
+      const imageUrls = [];
+      for (const chat of scrapedData) {
+        for (const msg of chat.messages || []) {
+          if (msg.images && msg.images.length > 0) {
+            for (const img of msg.images) {
+              if (img.src && (img.src.startsWith('blob:') || img.src.startsWith('data:'))) {
+                imageUrls.push({
+                  src: img.src,
+                  role: img.role
+                });
+              }
+            }
+          }
+        }
+      }
+
+      if (imageUrls.length === 0) {
+        addLog('没有找到图片', 'warn');
+        return;
+      }
+
+      addLog(`找到 ${imageUrls.length} 张图片，正在下载...`, 'info');
+
+      showImageProgress(true);
+      updateImageProgress(0, imageUrls.length);
+
+      const zip = new JSZip();
+      const imagesFolder = zip.folder('images');
+      const chatsFolder = zip.folder('chats');
+
+      const srcToLocalPath = {};
+
+      // 图片数据已嵌入在scrapedData中，直接使用
+      let imageData = {};
+      let fetchCount = 0;
+      let totalImages = 0;
+
+      for (const chat of scrapedData) {
+        for (const msg of chat.messages || []) {
+          if (msg.images && msg.images.length > 0) {
+            for (const img of msg.images) {
+              if (img.data && img.data.length > 0) {
+                totalImages++;
+                if (!srcToLocalPath[img.src]) {
+                  const mimeType = img.mimeType || 'image/png';
+                  const ext = mimeType.split('/')[1]?.split(';')[0] || 'png';
+                  const localPath = `images/image_${Date.now()}_${fetchCount}_${Math.random().toString(36).substr(2, 5)}.${ext}`;
+                  imageData[localPath] = {
+                    data: img.data,
+                    mimeType: mimeType,
+                    originalSrc: img.src
+                  };
+                  srcToLocalPath[img.src] = localPath;
+                  fetchCount++;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      addLog(`图片数据已内嵌: ${fetchCount} 张`, 'info');
+      updateImageProgress(fetchCount, totalImages);
+
+      for (const [localPath, data] of Object.entries(imageData)) {
+        try {
+          imagesFolder.file(localPath, new Uint8Array(data.data));
+          addLog(`添加图片: ${localPath}`, 'debug');
+        } catch (e) {
+          addLog(`添加图片失败 ${localPath}: ${e.message}`, 'error');
+        }
+      }
+
+      if (fetchCount === 0) {
+        addLog('警告: 没有可导出的图片', 'warn');
+      } else {
+        addLog(`已处理 ${fetchCount} 张图片`, 'success');
+      }
+
+      if (currentTabId) {
+        try {
+          addLog('发送fetchImages请求到content script...', 'info');
+          const response = await chrome.tabs.sendMessage(currentTabId, {
+            action: 'fetchImages',
+            images: imageUrls
+          });
+
+          addLog(`响应: success=${response?.success}, count=${response?.count}, failed=${response?.failed}`, 'info');
+
+          if (response && response.success && response.images) {
+            imageData = response.images;
+            fetchCount = Object.keys(imageData).length;
+            updateImageProgress(fetchCount, imageUrls.length);
+
+            addLog(`开始添加 ${fetchCount} 张图片到ZIP...`, 'info');
+            for (const [localPath, data] of Object.entries(imageData)) {
+              try {
+                if (!data || !data.data) {
+                  addLog(`跳过无效数据: ${localPath}`, 'warn');
+                  continue;
+                }
+                imagesFolder.file(localPath, new Uint8Array(data.data));
+                addLog(`✓ 添加图片: ${localPath}`, 'debug');
+              } catch (e) {
+                addLog(`添加图片失败 ${localPath}: ${e.message}`, 'error');
+              }
+            }
+
+            if (fetchCount === 0) {
+              addLog('警告: 没有成功获取任何图片', 'warn');
+            } else {
+              addLog(`已获取 ${fetchCount} 张图片`, 'success');
+            }
+          } else {
+            addLog(`获取图片失败: ${response?.error || response ? '返回数据为空' : '无响应'}`, 'error');
+          }
+        } catch (e) {
+          addLog(`请求图片失败: ${e.message}`, 'error');
+          addLog('可能原因: content script未加载或页面已刷新', 'info');
+        }
+      }
+
+      showImageProgress(false);
+      addLog('正在生成ZIP文件...', 'info');
+
+      // 处理chat数据，将图片URL替换为localPath
+      for (let i = 0; i < scrapedData.length; i++) {
+        const chat = JSON.parse(JSON.stringify(scrapedData[i]));
+        const updatedMessages = [];
+
+        for (const msg of chat.messages || []) {
+          const updatedMsg = { ...msg };
+
+          if (msg.images && msg.images.length > 0) {
+            updatedMsg.images = [];
+
+            for (const img of msg.images) {
+              if (img.src && (img.src.startsWith('blob:') || img.src.startsWith('data:'))) {
+                const localPath = srcToLocalPath[img.src];
+                if (localPath) {
+                  updatedMsg.images.push({
+                    type: 'image',
+                    localPath: localPath,
+                    originalRole: img.role
+                  });
+                } else {
+                  updatedMsg.images.push(img);
+                }
+              } else {
+                updatedMsg.images.push(img);
+              }
+            }
+          }
+
+          updatedMessages.push(updatedMsg);
+        }
+
+        chat.messages = updatedMessages;
+        chatsFolder.file(`chat_${i + 1}_${sanitizeFilename(chat.title || 'untitled')}.json`, JSON.stringify(chat, null, 2));
+      }
+
+      const metadata = {
+        exportTime: new Date().toISOString(),
+        totalChats: scrapedData.length,
+        totalImages: Object.keys(imageData).length,
+        sourceUrl: 'https://business.gemini.google.com',
+        note: '图片保存在images文件夹，JSON中的localPath字段指向对应图片'
+      };
+
+      zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const imageCount = Object.keys(imageData).length;
+      const filename = `gemini-chats-${timestamp}-${scrapedData.length}-images-${imageCount}.zip`;
+
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      addLog(`已导出: ${filename} (${scrapedData.length}个对话, ${imageCount}张图片)`, 'success');
+      clearData();
+      scrapedData = null;
+      updateStatus('idle');
+
+    } catch (error) {
+      addLog(`ZIP导出失败: ${error.message}`, 'error');
+      console.error(error);
     }
   });
 
@@ -277,6 +623,10 @@
 
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function sanitizeFilename(name) {
+    return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 50);
   }
 
   // 保存数据到存储

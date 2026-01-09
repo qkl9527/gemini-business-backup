@@ -118,6 +118,23 @@ body {
   border-radius: 4px;
 }
 
+.image-progress {
+  margin-top: 8px;
+  height: 6px;
+}
+
+.image-progress .progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.progress-bar-image {
+  background: linear-gradient(90deg, #5f6368, #34a853);
+}
+
 .controls {
   display: flex;
   gap: 10px;
@@ -179,6 +196,17 @@ body {
   background: var(--success-hover);
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(52, 168, 83, 0.3);
+}
+
+.btn-info {
+  background: #5f6368;
+  color: white;
+}
+
+.btn-info:hover:not(:disabled) {
+  background: #3c4043;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(95, 99, 104, 0.3);
 }
 
 .btn-text {
