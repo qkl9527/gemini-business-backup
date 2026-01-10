@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Chat Scraper",
+  "version": "1.0.0",
+  "description": "抓取Gemini聊天记录 - Firefox版本",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "https://*.business.gemini.google/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*.business.gemini.google/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.svg",
+      "48": "icons/icon48.svg",
+      "128": "icons/icon128.svg"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "geminiscraper@firefox.example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

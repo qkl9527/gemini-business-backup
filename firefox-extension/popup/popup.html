@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini Business Chat Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>📊 Gemini Business 聊天记录备份工具</h1>
+      <p class="subtitle">一键备份聊天记录，支持导出 JSON、MD、ZIP格式</p>
+    </header>
+
+    <section class="status-section">
+      <div class="status-grid">
+        <div class="status-item">
+          <span class="label">状态</span>
+          <span id="status" class="value status-idle">就绪</span>
+        </div>
+        <div class="status-item">
+          <span class="label">进度</span>
+          <span id="progress-text" class="value">0 / 0</span>
+        </div>
+        <div class="status-item">
+          <span class="label">抓取数</span>
+          <span id="scraped-count" class="value">0</span>
+        </div>
+      </div>
+
+      <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+
+      <div id="image-progress-container" class="progress-bar-container image-progress" style="display: none;">
+        <div class="progress-label">
+          <span>图片下载</span>
+          <span id="image-progress-text">0 / 0</span>
+        </div>
+        <div id="image-progress-bar" class="progress-bar progress-bar-image"></div>
+      </div>
+    </section>
+
+    <section class="controls">
+      <div class="btn-row">
+        <button id="start-btn" class="btn btn-primary">
+          <span class="btn-icon">▶</span>
+          开始抓取
+        </button>
+        <button id="stop-btn" class="btn btn-danger" disabled>
+          <span class="btn-icon">■</span>
+          停止
+        </button>
+        <button id="clear-btn" class="btn btn-warning" title="清空数据">
+          <span class="btn-icon">🗑</span>
+          清空
+        </button>
+      </div>
+      <div class="btn-row btn-row-export">
+        <button id="export-btn" class="btn btn-success" disabled>
+          <span class="btn-icon">💾</span>
+          导出 JSON
+        </button>
+        <button id="export-md-btn" class="btn btn-secondary" disabled>
+          <span class="btn-icon">📝</span>
+          导出 MD
+        </button>
+      </div>
+    </section>
+
+    <section id="downloads-section" class="downloads-section" style="display: none;">
+      <div class="downloads-header">
+        <h3>📦 已下载批次</h3>
+        <button id="clear-downloads" class="btn-text">清空</button>
+      </div>
+      <div id="downloads-list" class="downloads-list"></div>
+    </section>
+
+    <section class="logs-section">
+      <div class="logs-header">
+        <h3>📝 运行日志</h3>
+        <button id="clear-logs" class="btn-text">清空</button>
+      </div>
+      <div id="log-container" class="log-container">
+        <div class="log-entry info">
+          <span class="log-time">--:--:--</span>
+          <span class="log-message">扩展已加载，准备就绪</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="help-section">
+      <details open>
+        <summary>📖 使用说明</summary>
+        <div class="help-content">
+          <ol>
+            <li>确保已登录 Gemini Business</li>
+            <li>配置 每批打包数量（如设为2表示每2条自动下载）</li>
+            <li>点击"开始抓取"按钮</li>
+            <li>系统会自动每N条打包下载ZIP文件到下载文件夹</li>
+            <li>关闭 popup 后重新打开，下载记录仍会保留</li>
+            <li>点击"导出 JSON/MD"会重新获取所有批次数据并导出</li>
+            <li>已下载批次列表支持"重新下载"单个批次</li>
+          </ol>
+        </div>
+      </details>
+    </section>
+
+    <section class="config-section">
+      <details open>
+        <summary>⚙️ 高级配置</summary>
+        <div class="config-content">
+          <div class="config-item">
+            <label for="delay-between-chats">对话间隔时间 (毫秒)</label>
+            <input type="number" id="delay-between-chats" min="100" max="10000" value="500" step="100">
+          </div>
+          <div class="config-item">
+            <label for="delay-after-click">点击后等待时间 (毫秒)</label>
+            <input type="number" id="delay-after-click" min="500" max="10000" value="3000" step="500">
+          </div>
+          <div class="config-divider"></div>
+          <div class="config-item">
+            <label for="export-start-index">开始位置 (从0开始)</label>
+            <input type="number" id="export-start-index" min="0" value="0" step="1">
+          </div>
+          <div class="config-item">
+            <label for="export-count">本次备份数量 (0=全部)</label>
+            <input type="number" id="export-count" min="0" value="0" step="1">
+          </div>
+          <div class="config-divider"></div>
+          <div class="config-item">
+            <label for="batch-download-count">每批打包数量</label>
+            <input type="number" id="batch-download-count" min="1" max="100" value="2" step="1">
+          </div>
+          <div class="config-item info-text">
+            <small>每抓取N条后自动打包下载，然后清空继续抓取下一批</small>
+          </div>
+          <div class="config-actions">
+            <button id="save-config" class="btn btn-secondary">保存配置</button>
+            <span id="config-status" class="config-status"></span>
+          </div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <script src="../jszip.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
