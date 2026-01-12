@@ -13,7 +13,8 @@
   let chatItems = [];
   let config = {
     delayBetweenChats: 1000,
-    delayAfterClick: 8000
+    delayAfterClick: 8000,
+    previewWaitTime: 5000
   };
 
   // Logger类
@@ -210,8 +211,9 @@
   }
 
   // 提取单个turn的用户内容（包含图片下载）
-  async function extractTurnUserContent(turn) {
+  async function extractTurnUserContent(turn, previewWaitTime = 5000) {
     const result = { text: '', images: [] };
+    const processedImages = new Set();
 
     // 提取用户文本
     const markdownEl = turn.querySelector(".question-block ucs-fast-markdown");
@@ -222,35 +224,41 @@
       }
     }
 
-    // 提取用户图片（立即下载图片数据）
-    const summaryEl = turn.querySelector("ucs-summary");
-    if (summaryEl && summaryEl.shadowRoot) {
-      const attachmentsEl = summaryEl.shadowRoot.querySelector("ucs-summary-attachments");
-      if (attachmentsEl && attachmentsEl.shadowRoot) {
-        const containerEl = attachmentsEl.shadowRoot.querySelector(".attachment-container");
-        if (containerEl) {
-          const markdownImages = containerEl.querySelectorAll("ucs-markdown-image");
-          for (const imgEl of markdownImages) {
-            if (imgEl && imgEl.shadowRoot) {
-              const img = imgEl.shadowRoot.querySelector("img");
-              if (img && img.src) {
-                let imgData = null;
-                try {
-                  imgData = await getImageDataFromElement(img);
-                } catch (e) {
-                  logger.debug(`图片下载跳过: ${e.message}`);
+    // 处理用户上传的文件图片（从 carousel previewable）
+    const carouselContainer = turn.querySelector("ucs-carousel");
+    if (carouselContainer && carouselContainer.shadowRoot) {
+      logger.warn("carouselContainer.shadowRoot:", carouselContainer.shadowRoot)
+      const previewables = carouselContainer.querySelectorAll(".previewable");
+      logger.warn("previewables:", previewables)
+      for (const previewable of previewables) {
+        try {
+          previewable.click();
+          await sleep(previewWaitTime);
+
+          const previewEl = document.querySelector('ucs-standalone-app')?.shadowRoot
+            ?.querySelector(".ucs-standalone-outer-row-container ucs-results")?.shadowRoot
+            ?.querySelector("ucs-document-preview");
+          
+          if (previewEl && previewEl.shadowRoot) {
+            const previewImg = previewEl.shadowRoot.querySelector('.document-viewer-contents img');
+            if (previewImg && previewImg.src) {
+              if (!processedImages.has(previewImg.src)) {
+                processedImages.add(previewImg.src);
+                const imgData = await getImageDataFromElement(previewImg);
+                if (imgData) {
+                  result.images.push({
+                    type: 'image',
+                    src: previewImg.src,
+                    role: 'user',
+                    data: imgData.data,
+                    mimeType: imgData.mimeType
+                  });
                 }
-                // console.log("imgData:", imgData);
-                result.images.push({
-                  type: 'image',
-                  src: img.src,
-                  role: 'user',
-                  data: imgData ? imgData.data : null,
-                  mimeType: imgData ? imgData.mimeType : null
-                });
               }
             }
           }
+        } catch (e) {
+          logger.debug(`carousel 图片获取跳过: ${e.message}`);
         }
       }
     }
@@ -259,8 +267,9 @@
   }
 
   // 提取单个turn的AI内容（包含图片下载）
-  async function extractTurnAIResponse(turn) {
+  async function extractTurnAIResponse(turn, alreadyProcessedImages = new Set()) {
     const result = { text: '', images: [] };
+    const processedImages = new Set(alreadyProcessedImages);
 
     const summaryEl = turn.querySelector("ucs-summary");
     if (!summaryEl || !summaryEl.shadowRoot) {
@@ -293,6 +302,11 @@
             if (imgEl && imgEl.shadowRoot) {
               const img = imgEl.shadowRoot.querySelector("img");
               if (img && img.src) {
+                if (processedImages.has(img.src)) {
+                  continue;
+                }
+                processedImages.add(img.src);
+
                 let imgData = null;
                 try {
                   imgData = await getImageDataFromElement(img);
@@ -317,7 +331,7 @@
   }
 
   // 提取所有消息（处理所有turns，包含图片下载）
-  async function extractMessages() {
+  async function extractMessages(previewWaitTime = 5000) {
     const messages = [];
     const turns = getTurns();
 
@@ -331,7 +345,8 @@
     // 处理每个turn
     for (const turn of turns) {
       // 提取用户内容
-      const userContent = await extractTurnUserContent(turn);
+      const userContent = await extractTurnUserContent(turn, previewWaitTime);
+      logger.warn("userContent:", userContent);
       if (userContent.text || userContent.images.length > 0) {
         messages.push({
           role: 'user',
@@ -341,8 +356,16 @@
         });
       }
 
+      // 收集已提取的图片，避免重复
+      const processedImages = new Set();
+      for (const img of userContent.images) {
+        if (img.src) {
+          processedImages.add(img.src);
+        }
+      }
+
       // 提取AI内容（可能是文本或图片，不是同时存在）
-      const aiContent = await extractTurnAIResponse(turn);
+      const aiContent = await extractTurnAIResponse(turn, processedImages);
       if (aiContent.text || aiContent.images.length > 0) {
         messages.push({
           role: 'ai',
@@ -418,7 +441,7 @@
   }
 
   // 抓取单个对话
-  async function scrapeSingleChat(chatElement, index, total) {
+  async function scrapeSingleChat(chatElement, index, total, previewWaitTime = 5000) {
     try {
       const title = extractChatTitle(chatElement);
       logger.info(`[${index}/${total}] "${title}"`);
@@ -432,7 +455,7 @@
 
       let messages = [];
       try {
-        messages = await extractMessages();
+        messages = await extractMessages(previewWaitTime);
       } catch (e) {
         logger.warn(`[${index}/${total}] 提取消息失败: ${e.message}`);
       }
@@ -476,7 +499,8 @@
     // 应用配置
     config = {
       delayBetweenChats: requestConfig.delayBetweenChats || 500,
-      delayAfterClick: requestConfig.delayAfterClick || 3000
+      delayAfterClick: requestConfig.delayAfterClick || 3000,
+      previewWaitTime: requestConfig.previewWaitTime || 5000
     };
 
     try {
@@ -486,7 +510,7 @@
 
       logger.info('========================================');
       logger.info(`开始抓取 Gemini 聊天记录`);
-      logger.info(`间隔: ${config.delayBetweenChats}ms, 等待: ${config.delayAfterClick}ms`);
+      logger.info(`间隔: ${config.delayBetweenChats}ms, 等待: ${config.delayAfterClick}ms, 预览: ${config.previewWaitTime}ms`);
       if (useRange) {
         logger.info(`范围抓取: 开始=${startIndex}, 数量=${exportCount || '全部'}`);
       }
@@ -524,7 +548,7 @@
 
         currentChatIndex = i + 1;
         logger.info(`开始处理第 ${currentChatIndex}/${totalChats} 个对话 (索引${i})`);
-        await scrapeSingleChat(chatItems[i], currentChatIndex, totalChats);
+        await scrapeSingleChat(chatItems[i], currentChatIndex, totalChats, config.previewWaitTime);
         logger.info(`第 ${currentChatIndex}/${totalChats} 个对话处理完成`);
 
         if (i < endIdx - 1) {

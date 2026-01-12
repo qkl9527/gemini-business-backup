@@ -43,6 +43,7 @@
   const DEFAULT_CONFIG = {
     delayBetweenChats: 500,
     delayAfterClick: 3000,
+    previewWaitTime: 5000,
     exportStartIndex: 0,
     exportCount: 0,
     batchDownloadCount: 2
@@ -452,6 +453,7 @@
           config: {
             delayBetweenChats: config.delayBetweenChats,
             delayAfterClick: config.delayAfterClick,
+            previewWaitTime: config.previewWaitTime,
             exportStartIndex: currentStartIndex,
             exportCount: thisBatchSize,
             useRange: true
@@ -840,6 +842,7 @@
       const config = result[CONFIG_KEY] || DEFAULT_CONFIG;
       document.getElementById('delay-between-chats').value = config.delayBetweenChats;
       document.getElementById('delay-after-click').value = config.delayAfterClick;
+      document.getElementById('preview-wait-time').value = config.previewWaitTime || 5000;
       document.getElementById('export-start-index').value = config.exportStartIndex || 0;
       document.getElementById('export-count').value = config.exportCount || 0;
       document.getElementById('batch-download-count').value = config.batchDownloadCount || 2;
@@ -850,6 +853,7 @@
   async function saveConfig() {
     const delayBetweenChats = parseInt(document.getElementById('delay-between-chats').value) || 500;
     const delayAfterClick = parseInt(document.getElementById('delay-after-click').value) || 3000;
+    const previewWaitTime = parseInt(document.getElementById('preview-wait-time').value) || 5000;
     const exportStartIndex = parseInt(document.getElementById('export-start-index').value) || 0;
     const exportCount = parseInt(document.getElementById('export-count').value) || 0;
     const batchDownloadCount = parseInt(document.getElementById('batch-download-count').value) || 2;
@@ -857,6 +861,7 @@
     const config = {
       delayBetweenChats,
       delayAfterClick,
+      previewWaitTime,
       exportStartIndex,
       exportCount,
       batchDownloadCount
