@@ -467,7 +467,10 @@
       return { success: false, error: '请在Gemini页面使用' };
     }
 
-    // 应用配置
+    const startIndex = parseInt(requestConfig.exportStartIndex) || 0;
+    const exportCount = parseInt(requestConfig.exportCount) || 0;
+    const useRange = requestConfig.useRange === true;
+
     config = {
       delayBetweenChats: requestConfig.delayBetweenChats || 500,
       delayAfterClick: requestConfig.delayAfterClick || 3000
@@ -481,6 +484,9 @@
       logger.info('========================================');
       logger.info(`开始抓取 Gemini 聊天记录`);
       logger.info(`间隔: ${config.delayBetweenChats}ms, 等待: ${config.delayAfterClick}ms`);
+      if (useRange) {
+        logger.info(`范围抓取: 开始=${startIndex}, 数量=${exportCount || '全部'}`);
+      }
       logger.info('========================================');
 
       chatItems = await getChatItems();
@@ -491,18 +497,32 @@
         throw new Error('未找到任何对话项');
       }
 
-      for (let i = 0; i < chatItems.length; i++) {
+      let startIdx = 0;
+      let endIdx = chatItems.length;
+
+      if (useRange) {
+        startIdx = Math.max(0, startIndex);
+        if (startIdx >= totalChats) {
+          throw new Error(`开始位置(${startIdx})超出范围(0-${totalChats-1})`);
+        }
+        if (exportCount > 0) {
+          endIdx = Math.min(startIdx + exportCount, totalChats);
+        }
+        logger.info(`实际抓取范围: 索引 ${startIdx} - ${endIdx - 1} (共 ${endIdx - startIdx} 个)`);
+      }
+
+      for (let i = startIdx; i < endIdx; i++) {
         if (!isScraping) {
           logger.info('用户停止抓取');
           break;
         }
 
         currentChatIndex = i + 1;
-        logger.info(`开始处理第 ${i + 1}/${totalChats} 个对话`);
-        await scrapeSingleChat(chatItems[i], i + 1, totalChats);
-        logger.info(`第 ${i + 1}/${totalChats} 个对话处理完成`);
+        logger.info(`开始处理第 ${i + 1}/${totalChats} 个对话 (索引${i})`);
+        await scrapeSingleChat(chatItems[i], currentChatIndex, totalChats);
+        logger.info(`第 ${currentChatIndex}/${totalChats} 个对话处理完成`);
 
-        if (i < chatItems.length - 1) {
+        if (i < endIdx - 1) {
           await sleep(config.delayBetweenChats);
         }
       }
@@ -511,8 +531,25 @@
       logger.info(`抓取完成！共 ${scrapedChats.length} 个对话`);
       logger.info('========================================');
 
+      const batchNumber = requestConfig.batchNumber || 1;
+
+      chrome.runtime.sendMessage({
+        type: 'batch-complete',
+        batchNumber: batchNumber,
+        chatCount: scrapedChats.length,
+        startIndex: startIdx,
+        totalChats: totalChats
+      }).catch(e => {
+        logger.debug(`发送 batch-complete 失败: ${e.message}`);
+      });
+
+      if (scrapedChats.length > 0) {
+        logger.info(`开始分片传输 ${scrapedChats.length} 个对话...`);
+        await packageAndTransfer(scrapedChats, startIdx);
+      }
+
       isScraping = false;
-      return { success: true, chats: scrapedChats, total: scrapedChats.length };
+      return { success: true, message: '抓取完成' };
 
     } catch (error) {
       logger.error(`抓取出错: ${error.message}`);
@@ -674,8 +711,18 @@
 
     switch (request.action) {
       case 'startScraping':
-        startScraping(request.config).then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
-        return true;
+        sendResponse({ success: true, message: '开始抓取' });
+        startScraping(request.config).then(result => {
+          if (result.success) {
+            const chatCount = result.chats ? result.chats.length : 0;
+            logger.info(`抓取完成: ${chatCount}条对话`);
+          } else {
+            logger.info(`抓取完成: ${result.error || '未知错误'}`);
+          }
+        }).catch(e => {
+          logger.error(`抓取失败: ${e.message}`);
+        });
+        break;
 
       case 'stopScraping':
         sendResponse(stopScraping());
@@ -686,30 +733,175 @@
         break;
 
       case 'debug':
+        const turns = getTurns();
+        const items = conversationList.querySelectorAll('.conversation-container');
+        sendResponse({
+          success: true,
+          turnsCount: turns.length,
+          chatItemsCount: items.length,
+          isScraping
+        });
+        break;
+
+      case 'fetchImages':
         (async () => {
           try {
-            const turns = getTurns();
-            const items = await getChatItems();
-            sendResponse({
-              success: true,
-              turnsCount: turns.length,
-              chatItemsCount: items.length,
-              isScraping
-            });
+            const result = await fetchImages(request.images);
+            sendResponse(result);
           } catch (e) {
             sendResponse({ success: false, error: e.message });
           }
         })();
         return true;
 
-      case 'fetchImages':
-        fetchImages(request.images).then(result => sendResponse(result)).catch(e => sendResponse({ success: false, error: e.message }));
-        return true;
+      case 'packageAndTransfer':
+        packageAndTransfer(request.chats, request.startIndex, request.chunkSize).catch(e => {
+          logger.error(`传输失败: ${e.message}`);
+        });
+        break;
 
       default:
         sendResponse({ success: false, error: '未知命令' });
     }
   });
+
+  // 分片传输配置
+  const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024;
+
+  async function packageAndTransfer(chats, startIndex, customChunkSize) {
+    if (!chats || chats.length === 0) return;
+
+    const chunkSize = customChunkSize || DEFAULT_CHUNK_SIZE;
+    logger.info(`打包并传输 ${chats.length} 个对话... (分片: ${(chunkSize / 1024 / 1024).toFixed(0)}MB)`);
+
+    const zip = new JSZip();
+    let imageCount = 0;
+
+    for (const chat of chats) {
+      const chatIndex = chat.index || 0;
+      const safeTitle = sanitizeFilename(chat.title || `chat-${chatIndex}`);
+      const chatFolder = zip.folder(`chat_${chatIndex}_${safeTitle}`);
+
+      if (chat.messages && chat.messages.length > 0) {
+        const chatCopy = JSON.parse(JSON.stringify(chat));
+
+        if (chatCopy.messages) {
+          for (const msg of chatCopy.messages) {
+            if (msg.images && msg.images.length > 0) {
+              for (const img of msg.images) {
+                if (img.data && img.mimeType) {
+                  imageCount++;
+                  const ext = img.mimeType.split('/')[1]?.split(';')[0] || 'png';
+                  const imgFilename = `image_${Date.now()}_${Math.random().toString(36).substr(2, 6)}.${ext}`;
+                  const imgData = new Uint8Array(img.data);
+                  const relativePath = `images/${imgFilename}`;
+                  chatFolder.file(relativePath, imgData);
+
+                  img.data = null;
+                  img.src = relativePath;
+                }
+              }
+            }
+          }
+        }
+
+        chatFolder.file('chat.json', JSON.stringify(chatCopy, null, 2));
+        chatFolder.file('chat.md', generateMarkdown(chatCopy));
+      }
+    }
+
+    const metadata = {
+      exportTime: new Date().toISOString(),
+      startIndex: startIndex,
+      chatCount: chats.length,
+      imageCount: imageCount,
+      sourceUrl: window.location.href
+    };
+
+    zip.file('metadata.json', JSON.stringify(metadata, null, 2));
+
+    const transferId = `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const content = await zip.generateAsync({ type: 'uint8array' });
+
+    const transferMetadata = {
+      filename: `gemini-chats-idx${startIndex}-${chats.length}-${Date.now()}.zip`,
+      size: content.length,
+      chatCount: chats.length,
+      imageCount: imageCount,
+      transferId: transferId
+    };
+
+    logger.info(`ZIP大小: ${content.length} bytes, 开始分片传输...`);
+
+    await chrome.runtime.sendMessage({
+      type: 'transfer-start',
+      transferId: transferId,
+      metadata: transferMetadata
+    });
+
+    const totalChunks = Math.ceil(content.length / chunkSize);
+    logger.info(`Total chunks: ${totalChunks}, chunkSize: ${chunkSize}`);
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, content.length);
+      const chunk = content.slice(start, end);
+
+      await chrome.runtime.sendMessage({
+        type: 'chunk',
+        transferId: transferId,
+        chunkIndex: i,
+        totalChunks: totalChunks,
+        data: Array.from(chunk),
+        isLast: i === totalChunks - 1
+      });
+
+      if (i % 10 === 0 || i === totalChunks - 1) {
+        logger.debug(`Chunk ${i + 1}/${totalChunks} sent`);
+      }
+
+      if (i % 50 === 0 && i < totalChunks - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    await chrome.runtime.sendMessage({
+      type: 'transfer-end',
+      transferId: transferId
+    });
+
+    logger.info(`传输完成: ${transferMetadata.filename}`);
+  }
+
+  function sanitizeFilename(name) {
+    if (!name) return 'untitled';
+    return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 50);
+  }
+
+  function generateMarkdown(chat) {
+    let md = `# ${chat.title || 'Untitled Chat'}\n\n`;
+    md += `*Scraped at: ${chat.timestamp || new Date().toISOString()}*\n\n`;
+    md += `---\n\n`;
+
+    for (const msg of chat.messages || []) {
+      const role = msg.role === 'user' ? 'User' : 'Gemini';
+      md += `## ${role}\n\n`;
+      if (msg.text) md += `${msg.text}\n\n`;
+
+      if (msg.images && msg.images.length > 0) {
+        for (const img of msg.images) {
+          if (img.src) {
+            md += `![Image](${img.src})\n\n`;
+          }
+        }
+      }
+
+      md += `---\n\n`;
+    }
+
+    return md;
+  }
 
   logger.info('Gemini Chat Scraper已加载');
 

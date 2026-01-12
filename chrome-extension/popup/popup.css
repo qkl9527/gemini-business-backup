@@ -238,6 +238,81 @@ body {
   background: var(--border-color);
 }
 
+.btn-warning {
+  background: #f9ab00;
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #f8a800;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(249, 171, 0, 0.3);
+}
+
+.downloads-section {
+  background: var(--card-bg);
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  margin-bottom: 16px;
+}
+
+.downloads-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.downloads-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.downloads-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.download-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-color);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.download-item:last-child {
+  margin-bottom: 0;
+}
+
+.download-item .filename {
+  font-size: 12px;
+  color: var(--text-primary);
+  word-break: break-all;
+  flex: 1;
+}
+
+.download-item .batch-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.redownload-btn {
+  color: var(--primary-color) !important;
+  margin-left: 8px;
+}
+
+.redownload-btn:hover {
+  color: var(--primary-hover) !important;
+  background: rgba(66, 133, 244, 0.1) !important;
+}
+
 .logs-section {
   background: var(--card-bg);
   padding: 16px;
@@ -411,6 +486,12 @@ body {
   box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
 }
 
+.config-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 12px 0;
+}
+
 .config-actions {
   display: flex;
   align-items: center;
@@ -429,6 +510,20 @@ body {
 .config-status {
   font-size: 12px;
   color: var(--success-color);
+}
+
+.config-item.info-text {
+  margin-top: 8px;
+  padding: 8px;
+  background: #e8f0fe;
+  border-radius: 6px;
+}
+
+.config-item.info-text small {
+  color: var(--primary-color);
+  font-size: 11px;
+  line-height: 1.4;
+  display: block;
 }
 
 /* 滚动条样式 */
