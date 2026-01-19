@@ -227,9 +227,7 @@
     // 处理用户上传的文件图片（从 carousel previewable）
     const carouselContainer = turn.querySelector("ucs-carousel");
     if (carouselContainer && carouselContainer.shadowRoot) {
-      logger.warn("carouselContainer.shadowRoot:", carouselContainer.shadowRoot)
       const previewables = carouselContainer.querySelectorAll(".previewable");
-      logger.warn("previewables:", previewables)
       for (const previewable of previewables) {
         try {
           previewable.click();
@@ -346,7 +344,6 @@
     for (const turn of turns) {
       // 提取用户内容
       const userContent = await extractTurnUserContent(turn, previewWaitTime);
-      logger.warn("userContent:", userContent);
       if (userContent.text || userContent.images.length > 0) {
         messages.push({
           role: 'user',
