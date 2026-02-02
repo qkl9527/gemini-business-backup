@@ -2,6 +2,8 @@
 
 强大的浏览器扩展，用于备份和分析您的 Gemini Business 聊天历史。
 
+[english](README.md) | [中文](README_CN.md)
+
 ## 🌟 功能特性
 
 ### 当前版本 (v1.0.0)

@@ -2,6 +2,8 @@
 
 A powerful browser extension that extracts your Gemini Business chat history for backup and analysis purposes.
 
+[english](README.md) | [中文](README_CN.md)
+
 ## 🌟 Features
 
 ### Current Version (v1.0.0)
